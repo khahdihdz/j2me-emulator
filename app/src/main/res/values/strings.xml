@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">J2ME Emulator</string>
+    <string name="engine_not_integrated">Engine chưa tích hợp — đang ở skeleton v0.1.0. Chưa chạy được game.</string>
+    <string name="received_file">Đã nhận file: %1$s\n(File chưa được import vì engine chưa tích hợp.)</string>
+    <string name="no_file_received">Chưa nhận file game nào. Mở một file .jar hoặc .jad để thử import sau khi engine được tích hợp.</string>
+    <string name="skeleton_title">J2ME Emulator — Skeleton v0.1.0</string>
+</resources>

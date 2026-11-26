@@ -1,0 +1,6 @@
+[submodule "vendor/j2me-loader"]
+	path = vendor/j2me-loader
+	url = https://github.com/nikita36078/J2ME-Loader.git
+	# Pin: checkout tag 1.8.2 (commit 7e978c5) sau khi `git submodule update --init`:
+	#   git -C vendor/j2me-loader checkout 1.8.2
+	# Không track master của upstream (master biến động, bản continuous build lại liên tục).
