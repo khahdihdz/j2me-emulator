@@ -3,6 +3,8 @@ package com.khahdihdz.j2meemulator
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,7 +16,9 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import androidx.lifecycle.ViewModelProvider
+import androidx.preference.PreferenceManager
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.schedulers.Schedulers
@@ -27,6 +31,7 @@ import ru.playsoftware.j2meloader.appsdb.AppRepository
 import ru.playsoftware.j2meloader.config.Config
 import ru.playsoftware.j2meloader.settings.SettingsActivity
 import ru.playsoftware.j2meloader.util.AppUtils
+import ru.playsoftware.j2meloader.util.Constants
 
 /**
  * Phase 3 — Home screen. This activity is the app's launcher entry
@@ -70,12 +75,23 @@ import ru.playsoftware.j2meloader.util.AppUtils
  * Tap a game -> `Config.startApp(title, pathExt, false)` (verified:
  * opens ConfigActivity on first run, MicroActivity afterwards).
  * Long-press a game -> our GameDetailsActivity.
- * Full library management (import from the file picker, search, sort,
- * rename, delete, reinstall, home-screen shortcut) stays in the
- * engine MainActivity ("Thư viện & Nhập game" button). Deliberately
- * not duplicated: the engine list is the single writer to the Room
- * database, and the work-directory first-run flow (permission request,
- * create-dir dialog) lives in the engine MainActivity.
+ *
+ * Phase 5 — library search and sort on this screen. Search filters the
+ * list by title or author with the engine's own match rule
+ * (AppsListAdapter.AppFilter at 1.8.2: lowercased title or author
+ * contains the lowercased query), debounced 300 ms like the engine
+ * list. Sort writes the same `PREF_APP_SORT` preference the engine
+ * list uses (`Constants.PREF_APP_SORT`, verified at 1.8.2), with the
+ * same entries (`R.array.pref_app_sort_entries`: name / date / vendor)
+ * and the same direction-toggle rule; both repositories observe that
+ * preference, so Home and the engine Library always sort the same way.
+ * Delete lives in our GameDetailsActivity (same engine calls as the
+ * engine's own delete). Rename, reinstall and home-screen shortcut
+ * stay in the engine MainActivity ("Thư viện & Nhập game" button).
+ * Deliberately not duplicated: the engine list is the single writer
+ * to the Room database, and the work-directory first-run flow
+ * (permission request, create-dir dialog) lives in the engine
+ * MainActivity.
  *
  * Two-repository staleness: this activity's AppListModel creates its
  * own AppRepository, and the engine MainActivity creates another one
@@ -100,6 +116,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: GameAdapter
     private val disposables = CompositeDisposable()
     private var dbReadyAtCreate = false
+    private var emptyTitle: TextView? = null
+
+    /** Phase 5 — search debounce, same 300 ms as the engine list. */
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private var searchRunnable: Runnable? = null
 
     /** SAF picker for "Nhập game từ file". OpenDocument (not
      * GetContent) so the returned Uri carries a persistable read
@@ -139,6 +160,27 @@ class MainActivity : AppCompatActivity() {
         val listView = findViewById<ListView>(R.id.home_game_list)
         listView.adapter = adapter
         listView.emptyView = findViewById(R.id.home_empty)
+        emptyTitle = findViewById(R.id.home_empty_title)
+        findViewById<SearchView>(R.id.home_search).setOnQueryTextListener(
+            object : SearchView.OnQueryTextListener {
+                override fun onQueryTextSubmit(query: String?): Boolean {
+                    applySearch(query)
+                    return true
+                }
+
+                override fun onQueryTextChange(newText: String?): Boolean {
+                    // Debounce like the engine list (300 ms), so
+                    // typing does not re-filter on every keystroke.
+                    searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                    val text = newText
+                    searchRunnable = Runnable { applySearch(text) }
+                    searchHandler.postDelayed(searchRunnable!!, 300)
+                    return true
+                }
+            })
+        findViewById<Button>(R.id.home_sort).setOnClickListener {
+            showSortDialog()
+        }
         listView.setOnItemClickListener { _, _, position, _ ->
             val item = adapter.getItem(position) ?: return@setOnItemClickListener
             Config.startApp(this, item.title, item.pathExt, false)
@@ -184,8 +226,53 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        searchRunnable?.let { searchHandler.removeCallbacks(it) }
         disposables.clear()
         super.onDestroy()
+    }
+
+    /** Phase 5 — apply a search query to the list. */
+    private fun applySearch(query: String?) {
+        adapter.setQuery(query ?: "")
+    }
+
+    /**
+     * Phase 5 — sort dialog. Uses the engine's own sort entries
+     * (`R.array.pref_app_sort_entries`: name / date / vendor) and
+     * writes the same `PREF_APP_SORT` preference the engine list
+     * writes, with the engine's direction rule: picking the variant
+     * that is already active flips its direction bit (0x80000000).
+     * Both repositories observe that preference, so the engine Library
+     * re-sorts together with Home.
+     */
+    private fun showSortDialog() {
+        val entries = resources.getStringArray(R.array.pref_app_sort_entries)
+        val current = appRepository.sort
+        val currentIndex = current and 0x7FFFFFFF
+        val labels = entries.mapIndexed { index, label ->
+            if (index == currentIndex) {
+                // The engine marks the current variant with an
+                // up/down arrow drawable; here the arrow is part of
+                // the label text instead (down = ascending).
+                if (current >= 0) "$label ↓" else "$label ↑"
+            } else {
+                label
+            }
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_app_sort_title)
+            .setItems(labels) { dialog, which ->
+                var variant = which
+                if (appRepository.sort == which) {
+                    variant = variant or Int.MIN_VALUE
+                }
+                PreferenceManager.getDefaultSharedPreferences(this)
+                    .edit()
+                    .putInt(Constants.PREF_APP_SORT, variant)
+                    .apply()
+                dialog.dismiss()
+            }
+            .show()
     }
 
     /**
@@ -332,11 +419,57 @@ class MainActivity : AppCompatActivity() {
     private inner class GameAdapter :
         ArrayAdapter<AppItem>(this@MainActivity, 0, mutableListOf()) {
 
+        private var allItems: List<AppItem> = emptyList()
+        private var shownItems: List<AppItem> = emptyList()
+        private var query: String = ""
+
+        /** Full list from the repository. Re-applies the current
+         * search query, like the engine adapter's setItems does. */
         fun setItems(items: List<AppItem>) {
-            clear()
-            addAll(items)
+            allItems = items
+            applyFilter()
+        }
+
+        /** Phase 5 — search query (lowercased here, like the engine
+         * list lowercases its query before filtering). */
+        fun setQuery(newQuery: String) {
+            query = newQuery.lowercase()
+            applyFilter()
+        }
+
+        /**
+         * Phase 5 — filter. Same match rule as the engine
+         * AppsListAdapter.AppFilter at 1.8.2: a game matches when its
+         * lowercased title or author contains the lowercased query;
+         * an empty query shows everything.
+         */
+        private fun applyFilter() {
+            shownItems = if (query.isEmpty()) {
+                allItems
+            } else {
+                allItems.filter { item ->
+                    item.title.lowercase().contains(query)
+                        || item.author.lowercase().contains(query)
+                }
+            }
+            updateEmptyText()
             notifyDataSetChanged()
         }
+
+        /** When a search finds nothing, say so instead of claiming
+         * no games are installed. */
+        private fun updateEmptyText() {
+            emptyTitle?.text = if (query.isNotEmpty() && shownItems.isEmpty()) {
+                getString(R.string.home_no_results)
+            } else {
+                getString(R.string.home_no_games)
+            }
+        }
+
+        override fun getCount(): Int = shownItems.size
+
+        override fun getItem(position: Int): AppItem? =
+            shownItems.getOrNull(position)
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             val view = convertView ?: LayoutInflater.from(context)
