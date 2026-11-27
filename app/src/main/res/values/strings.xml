@@ -34,4 +34,14 @@
     <string name="about_engine_repo">Engine: github.com/nikita36078/J2ME-Loader</string>
     <string name="about_how_to">Cách dùng: mở Thư viện để nhập file .jar hoặc .jad, chạm vào game để chạy, nhấn giữ game để xem chi tiết. Cài đặt từng game mở ra ở lần chạy đầu tiên.</string>
     <string name="about_open_library">Mở thư viện</string>
+
+    <!-- Phase 4 — import (ours). "import_" names do not exist in the
+         engine's 249 strings at tag 1.8.2, so they cannot collide.
+         Only used by Home for its own pre-checks; errors the engine
+         itself reports (file hỏng, JAD thiếu URL, JAR thiếu manifest)
+         come from the engine's InstallerDialog, not from here. -->
+    <string name="import_pick_file">Nhập game từ file</string>
+    <string name="import_error_title">Không mở được file này</string>
+    <string name="import_error_bad_extension">File phải có đuôi .jar, .jad hoặc .kjx.</string>
+    <string name="import_error_bad_scheme">Không hỗ trợ đường dẫn này. Chỉ nhận file trên máy, file được chia sẻ, hoặc liên kết .jad trên mạng.</string>
 </resources>
