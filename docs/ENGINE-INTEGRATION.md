@@ -730,3 +730,115 @@ upstream; asserted in `final_checks` (patch marker must be present).
 - **Not built, not run.** The real proof is the next CI run on
   `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
   `lintFdroidDebug` -> `assembleFdroidDebug`).
+
+## 12. Phase 5 — Library management: search, sort, delete, details (written 2026-11-27)
+
+### What the engine already had (verified at tag 1.8.2)
+
+Read directly from `AppsListFragment.java`, `AppsListAdapter.java`,
+`AppRepository.java`, `AppItemDao.java`, `AppItem.java`,
+`AppUtils.java`, `Constants.java`, `res/values/arrays.xml` and
+`res/values/strings.xml` at 1.8.2.
+
+| Feature | Engine (1.8.2) |
+|---|---|
+| Search | `SearchView` in the options menu; RxJava debounce 300 ms, lowercased, `distinctUntilChanged`; `AppsListAdapter.AppFilter` matches when the lowercased title **or** author contains the lowercased query; empty query shows everything. |
+| Sort | `PREF_APP_SORT` int preference (`Constants.PREF_APP_SORT = "pref_app_sort"`); dialog over `R.array.pref_app_sort_entries` (name / date = install order = `id` / vendor) with `R.array.pref_app_sort_values` SQL fragments (`title … %1$s, author … ASC`, `id %1$s`, `author … %1$s, title … ASC`, where `%1$s` is `ASC`/`DESC`); re-selecting the active variant flips direction via bit `0x80000000`. `AppRepository` observes the preference and re-queries (`MutableSortSQLiteQuery`: `SELECT * FROM apps ORDER BY …`). |
+| Rename | Context menu → `alertRename`: `EditText` dialog, `item.setTitle(title)` + `appRepository.update(item)` (Room `@Update`). |
+| Reinstall | Context menu → `InstallerDialog.newInstance(appItem.getId())`, shown only when `pathExt + Config.MIDLET_RES_FILE` exists. |
+| Shortcut | Context menu → `ShortcutManagerCompat.requestPinShortcut` with the game icon. |
+| Delete | Context menu → `alertDelete`: confirmation dialog (`R.string.message_delete`), then `AppUtils.deleteApp(item)` + `appRepository.delete(item)`. |
+| Details | None — the engine list row shows only title, author, version. Our `GameDetailsActivity` is the details screen. |
+| DB | Room v1, `J2ME-apps.db` in the work dir, table `apps`, unique index on `path`; `AppItemDao.delete` is Room `@Delete` (matches on the `@PrimaryKey id`). `AppItem` fields: `id`, `title` (mutable), `author`, `version`, `path` (converted-folder name); `getPathExt() = Config.getAppDir() + path`. No size field. |
+
+### Delete keeps the original game file (prompt requirement) — verified
+
+`AppUtils.deleteApp(AppItem)` at 1.8.2 deletes exactly three
+directories and nothing else:
+
+1. `item.getPathExt()` — the converted game directory
+   (`<emulatorDir>/converted/<path>`: DEX, res JAR, manifest, icon);
+2. `Config.getDataDir() + item.getPath()` — the game's saved data (RMS);
+3. `Config.getConfigsDir() + item.getPath()` — the game's settings.
+
+`AppRepository.delete(item)` then removes only the Room row. Neither
+call touches the original `.jar`/`.jad` file: the installer only ever
+*read* it (copied into a cache directory and converted there, Phase 4),
+so the source file stays wherever the user had it. Our delete in
+`GameDetailsActivity` runs these same two calls, in the same order —
+no separate delete path was needed, and no original-file deletion was
+ever possible through them.
+
+### What Phase 5 adds (our code)
+
+- **Search on Home** (`MainActivity.kt`, `activity_home.xml`): a
+  `SearchView` above the list, 300 ms debounce (same as the engine),
+  same match rule (lowercased title or author contains the lowercased
+  query). `GameAdapter` keeps the full list and a filtered view and
+  re-applies the current query whenever new data arrives (like the
+  engine adapter's `setItems`). When a search finds nothing, the empty
+  view says so (`home_no_results`) instead of claiming no games are
+  installed.
+- **Sort on Home**: a "Sắp xếp" button opening a dialog over the
+  engine's own `R.array.pref_app_sort_entries` with title
+  `R.string.pref_app_sort_title`, current variant from
+  `appRepository.sort`, the engine's direction-toggle rule, and writing
+  the same `PREF_APP_SORT` preference. Both repositories observe that
+  preference, so Home and the engine Library always sort identically;
+  no sort state is duplicated in our code.
+- **Details** (`GameDetailsActivity.kt`,
+  `activity_game_details.xml`): folder name (`item.path`) and total
+  size of the converted directory (walked on a background thread;
+  AppItem has no size field, so this is our own computation).
+- **Delete in Details**: confirmation dialog whose message states
+  that saved data and settings go away but the original file is kept;
+  then the engine's two delete calls above, with the item rebuilt from
+  the extras including its database `id` (Room `@Delete` needs the
+  primary key), plus a Toast confirming the original file was kept.
+  The repository comes from a `ViewModelProvider` in Details, the same
+  pattern Home uses.
+
+### What stays in the engine Library (not duplicated)
+
+Rename, reinstall and home-screen shortcut stay in the engine
+MainActivity's context menu — they already exist there, work through
+the engine's own repository instance, and duplicating them would
+reintroduce the two-repository staleness problem (Phase 3, §10).
+
+### Known race (honest gap)
+
+`AppRepository.delete` is asynchronous (Completable on the IO
+scheduler, no completion callback). Details finishes right after
+calling it, and Home re-queries on resume; an activity transition
+normally takes far longer than the single-row delete, but a very fast
+return could in theory show the deleted game once more until the next
+resume re-query. The engine's own delete has no such race only because
+its fragment keeps observing the same repository instance.
+
+### Not done in Phase 5 (honest gaps)
+
+- No launcher icon yet.
+- No rename/reinstall/shortcut on our screens (in the engine Library).
+- No per-game size breakdown (only the converted-directory total).
+- Not verified on CI yet: static-checked only (see below).
+
+### Checks run (static only — no JDK/Gradle/Android SDK locally)
+
+- `python3 -m py_compile tools/merge-engine.py` OK (script unchanged
+  in Phase 5 — no new activities, no manifest changes).
+- XML files parse (`xml.etree.ElementTree`); every `R.id`,
+  `R.string`, `R.layout`, `R.array` referenced in the changed Kotlin
+  exists in our res or in the engine's merged res
+  (`pref_app_sort_entries`, `pref_app_sort_title` verified in the
+  engine's `arrays.xml` / fragment source at 1.8.2).
+- All 11 new string names checked against the engine's 249 strings
+  at 1.8.2: no collisions.
+- Every engine API name used in Kotlin is in the verified list:
+  `Config.startApp`, `Config.getEmulatorDir`, `Config.MIDLET_ICON_FILE`,
+  `AppListModel`, `AppRepository.observeApps`/`getAll`/`sort`/`delete`,
+  `AppUtils.getIconBitmap`/`deleteApp`, `SettingsActivity`,
+  `Constants.PREF_APP_SORT`, `AppItem` constructor/`setId`/`getId`/
+  `getPath`. No TODO markers, no calls to unverified engine APIs.
+- **Not built, not run.** The real proof is the next CI run on
+  `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
+  `lintFdroidDebug` -> `assembleFdroidDebug`).
