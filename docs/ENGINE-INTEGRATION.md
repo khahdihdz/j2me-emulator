@@ -842,3 +842,154 @@ its fragment keeps observing the same repository instance.
 - **Not built, not run.** The real proof is the next CI run on
   `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
   `lintFdroidDebug` -> `assembleFdroidDebug`).
+
+## 13. Phase 6 — Controls: orientation and virtual keyboard (written 2026-11-27)
+
+### What the engine already had (verified at tag 1.8.2)
+
+Read directly from `javax/microedition/shell/MicroActivity.java`
+(719 lines), `MicroLoader.java`, `config/ProfileModel.java`,
+`config/ProfilesManager.java`, `config/ConfigActivity.java`,
+`javax/microedition/lcdui/keyboard/VirtualKeyboard.java` (1377 lines),
+`util/Constants.java`, `res/xml/preferences.xml` and
+`res/values/arrays.xml` at 1.8.2.
+
+**Orientation — per game, no global setting.**
+
+- The value lives in the per-game profile: `ProfileModel.orientation`,
+  JSON name `"Orientation"`, edited in `ConfigActivity` via the
+  `screenOrientationSelector` spinner (selected position = value;
+  entries `R.array.PREF_ORIENTATION_ENTRIES` = Default / Auto /
+  Portrait / Landscape). `MicroLoader.getOrientation()` returns
+  `params.orientation`; `MicroActivity.setOrientation` maps it:
+  0 Default → `SCREEN_ORIENTATION_UNSPECIFIED`, 1 Auto →
+  `SCREEN_ORIENTATION_FULL_SENSOR`, 2 Portrait →
+  `SCREEN_ORIENTATION_SENSOR_PORTRAIT`, 3 Landscape →
+  `SCREEN_ORIENTATION_SENSOR_LANDSCAPE`. The constants are private to
+  `MicroActivity` (lines 91–94); the profile int is the interface.
+- `MicroActivity` declares
+  `configChanges="orientation|screenSize|keyboardHidden|screenLayout|
+  smallestScreenSize|uiMode"`, so rotating does not restart the game.
+- In-game menu (`R.menu.midlet_displayable`): "Lock orientation"
+  (`action_lock_orientation`, API 18+) toggles
+  `SCREEN_ORIENTATION_LOCKED` and restores the per-game value on
+  unlock; "IME keyboard" (`action_ime_keyboard`) toggles the system
+  soft keyboard via `InputMethodManager`.
+- Phone-style virtual-keyboard layouts force portrait:
+  `MicroActivity.onCreate` sets `ORIENTATION_PORTRAIT` when
+  `vk.isPhone()`; same in the unlock path and after a layout switch.
+- There is **no global orientation preference**: `preferences.xml`
+  (global Settings) has no orientation entry, and `Constants.java`
+  has no orientation preference key. A global override would have to
+  intercept `MicroActivity` in the `:midlet` process, which is
+  engine-owned — not attempted in v0.1.0.
+
+**Virtual keyboard — per game, full-featured.**
+
+- Created in `MicroLoader.applyConfiguration()`: when
+  `params.showKeyboard` is true, `ContextHolder.setVk(new
+  VirtualKeyboard(params))`; otherwise `setVk(null)` (no keyboard at
+  all). Default for a new profile is `showKeyboard = true`
+  (`ProfileModel(File)` constructor, line 187).
+- Keys (VirtualKeyboard keypad array): 0–9 (`Canvas.KEY_NUM0…9`),
+  `*` / `#`, soft keys L/R (`KEY_SOFT_LEFT` / `KEY_SOFT_RIGHT`),
+  D-pad with diagonals (8 `DualKey`/`VirtualKey` entries:
+  up/left/right/down + 4 diagonals), FIRE, gaming keys A/B
+  (`SE_KEY_SPECIAL_GAMING_A/B`), C (`Canvas.KEY_END`), D
+  (`Canvas.KEY_SEND`), and a MENU key (`KeyMapper.KEY_OPTIONS_MENU`).
+  Touch presses call `vibrate()` when `params.vkFeedback` is true
+  (haptic feedback; the global gate is `PREF_VIBRATION` =
+  `"pref_vibration_switch"`, default true, read in
+  `MicroActivity.onCreate` via `ContextHolder.setVibration`).
+- Layout variants (`vkType`, `ProfileModel` line 117): 0 Custom,
+  1 Phone, 2 Phone+arrows, 3 Numbers+arrows, 4 Arrows+numbers,
+  5 Numbers, 6 Arrows; labels `R.array.PREF_VK_TYPE_ENTRIES`
+  (7 items). Custom layouts are saved per game to
+  `<config dir>/VirtualKeyboardLayout`
+  (`Config.MIDLET_KEY_LAYOUT_FILE`). Other per-game VK settings:
+  `vkButtonShape` (default `ROUND_RECT_SHAPE`), `vkAlpha` (default
+  64), `vkForceOpacity`, `vkHideDelay` (auto-hide after N ms, 0 =
+  never), button/outline colors.
+- In-game menu (only when a VK exists): edit layout (move keys,
+  `LAYOUT_KEYS`), scale layout (`LAYOUT_SCALES`), finish edit +
+  save-layout prompt (`pref_vk_save_alert`, with an option to save
+  screen params for phone layouts), switch layout dialog (over
+  `PREF_VK_TYPE_ENTRIES`; switching to a phone layout re-applies
+  portrait, otherwise restores the per-game orientation), hide-buttons
+  dialog (per-key visibility toggles).
+- Physical keys: `KeyMapper.setKeyMapping(params)` in
+  `applyConfiguration()` maps Android key codes to J2ME keys from the
+  per-game profile (`keyCodeMap` / `keyMappings`); the editor is the
+  engine's `KeyMapperActivity` (declared in the manifest, reached
+  from the engine Settings). Not re-implemented.
+- Global defaults for new games: the default profile
+  (`PREF_DEFAULT_PROFILE = "default_profile"`, `Constants.java:30`;
+  `pref_default_settings` → `ProfilesActivity` in global Settings).
+  A new game's first `ConfigActivity` open starts from that profile's
+  values; there is no separate global orientation/keyboard switch.
+
+**Our launcher screens.** Home, Details and About declare no
+`requestedOrientation` in the merged manifest, so they follow the
+device sensor (free rotation = auto). The forwarder/Home inherits
+the engine MainActivity's `configChanges` in the merge (Phase 4), so
+rotating Home does not restart it or lose the game list.
+
+### What Phase 6 adds (our code)
+
+Only a read-only display in `GameDetailsActivity` — the engine
+already implements everything the prompt asks for in-game, so no
+control was rewritten:
+
+- **Orientation row** (`details_orientation`): `ProfilesManager.
+  loadConfig(new File(Config.getConfigsDir(), folderName))` gives the
+  game's `ProfileModel`; the label is
+  `R.array.PREF_ORIENTATION_ENTRIES[params.orientation]` (the
+  engine's own labels, so they stay in sync with what
+  `ConfigActivity` writes). `loadConfig` is `@Nullable` and returns
+  null when the game has no config file yet (no `config.json` and no
+  legacy `config.xml`), so null is shown as "chưa cấu hình"
+  (`details_orientation_unknown`) instead of inventing a value.
+- **Virtual keyboard row** (`details_keyboard`): "Bật — <layout>"
+  from `params.showKeyboard` + `R.array.PREF_VK_TYPE_ENTRIES
+  [params.vkType]`, or "Tắt". Out-of-range values (a hand-edited
+  config) fall back to the "unknown" strings instead of indexing
+  out of bounds. File IO + Gson parsing run on a background thread,
+  like the folder-size computation in Phase 5; any exception shows
+  the "unknown" strings.
+- Editing stays in the engine `ConfigActivity` via the existing
+  "Cài đặt game" button (`Config.startApp(..., true)`); the
+  orientation spinner and the virtual-keyboard toggle/group live
+  there (`ConfigActivity.loadParams` lines 562, 586–599;
+  `saveParams` lines 630, 665, 673).
+
+### Not done in Phase 6 (honest gaps)
+
+- No global orientation override (no engine support; see above).
+- No per-game orientation/keyboard editor of our own; the engine
+  `ConfigActivity` owns it.
+- No launcher icon yet (still the engine's `ic_launcher`).
+- No on-device verification of the keyboard layouts or of the
+  lock-orientation menu; the in-game behaviour is engine code, not
+  ours, and was verified only by reading it.
+- Not verified on CI yet: static-checked only (see below).
+
+### Checks run (static only — no JDK/Gradle/Android SDK locally)
+
+- `python3 -m py_compile tools/merge-engine.py` OK (script unchanged
+  in Phase 6 — no new activities, no manifest changes).
+- XML files parse (`xml.etree.ElementTree`); every `R.id`,
+  `R.string`, `R.layout`, `R.array` referenced in the changed Kotlin
+  exists in our res or in the engine's merged res
+  (`PREF_ORIENTATION_ENTRIES` and `PREF_VK_TYPE_ENTRIES` verified in
+  the engine's `arrays.xml` at 1.8.2; the 4 orientation entries and
+  7 VK-type entries match the value ranges 0–3 and 0–6).
+- All 6 new string names checked against the engine's strings at
+  1.8.2: no collisions.
+- Every engine API name used in Kotlin is in the verified list:
+  `Config.getConfigsDir`, `ProfilesManager.loadConfig`,
+  `ProfileModel.orientation` / `showKeyboard` / `vkType`. No TODO
+  markers, no calls to unverified engine APIs, no `*/*` inside a
+  block comment (Phase 4 lesson), brace/paren balance OK.
+- **Not built, not run.** The real proof is the next CI run on
+  `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
+  `lintFdroidDebug` -> `assembleFdroidDebug`).
