@@ -146,10 +146,11 @@ class GameDetailsActivity : AppCompatActivity() {
     }
 
     /** Walk the converted directory on a background thread and show
-     * its total size. -1 when the directory is missing. */
+     * its total size. -1 when the directory is missing. The walk
+     * itself is [FormatRules.dirSize] (Phase 7, unit-tested). */
     private fun showSize(dir: File) {
         Thread {
-            val size = dirSize(dir)
+            val size = FormatRules.dirSize(dir)
             runOnUiThread {
                 val sizeView = findViewById<TextView>(R.id.details_size)
                 sizeView.text = if (size >= 0) {
@@ -161,14 +162,9 @@ class GameDetailsActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun dirSize(dir: File): Long {
-        if (!dir.isDirectory) return -1
-        var total = 0L
-        dir.walkTopDown().forEach { file ->
-            if (file.isFile) total += file.length()
-        }
-        return total
-    }
+    /** Size formatting lives in [FormatRules.formatSize]
+     * (Phase 7, unit-tested). */
+    private fun formatSize(bytes: Long): String = FormatRules.formatSize(bytes)
 
     /**
      * Phase 6 — show the game's per-game orientation and virtual
@@ -195,7 +191,10 @@ class GameDetailsActivity : AppCompatActivity() {
                     keyboardText = getString(R.string.details_keyboard_unknown)
                 } else {
                     val orientationEntries = resources.getStringArray(R.array.PREF_ORIENTATION_ENTRIES)
-                    val orientationLabel = orientationEntries.getOrNull(params.orientation)
+                    // Phase 7 — out-of-range lookup is
+                    // FormatRules.orientationLabel (unit-tested).
+                    val orientationLabel = FormatRules.orientationLabel(
+                        orientationEntries, params.orientation)
                     orientationText = if (orientationLabel != null) {
                         getString(R.string.details_orientation, orientationLabel)
                     } else {
@@ -203,7 +202,9 @@ class GameDetailsActivity : AppCompatActivity() {
                     }
                     keyboardText = if (params.showKeyboard) {
                         val layoutEntries = resources.getStringArray(R.array.PREF_VK_TYPE_ENTRIES)
-                        val layoutLabel = layoutEntries.getOrNull(params.vkType)
+                        // Phase 7 — same rule, FormatRules.vkLayoutLabel.
+                        val layoutLabel = FormatRules.vkLayoutLabel(
+                            layoutEntries, params.vkType)
                         if (layoutLabel != null) {
                             getString(R.string.details_keyboard,
                                 getString(R.string.details_keyboard_on, layoutLabel))
@@ -224,17 +225,6 @@ class GameDetailsActivity : AppCompatActivity() {
                 findViewById<TextView>(R.id.details_keyboard).text = keyboardText
             }
         }.start()
-    }
-
-    private fun formatSize(bytes: Long): String {
-        val kb = bytes / 1024.0
-        val mb = kb / 1024.0
-        return when {
-            bytes < 1024 -> "$bytes B"
-            kb < 1024 -> "%.2f KB".format(kb)
-            mb < 1024 -> "%.2f MB".format(mb)
-            else -> "%.2f GB".format(mb / 1024.0)
-        }
     }
 
     /**
