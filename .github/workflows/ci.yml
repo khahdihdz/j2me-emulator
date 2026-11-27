@@ -64,6 +64,18 @@ jobs:
         # testDebugUnitTest task no longer exists; fdroid is the
         # full-emulator flavour with no Play signing requirements.
         run: ./gradlew testFdroidDebugUnitTest --stacktrace
+      - name: Upload unit test results
+        # Like the lint report: keep the JUnit XML/HTML on the
+        # runner even when tests fail, so a failure is inspectable
+        # without re-running CI (Phase 7: 73 tests).
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-fdroid-debug
+          path: |
+            app/build/test-results/testFdroidDebugUnitTest/*.xml
+            app/build/reports/tests/testFdroidDebugUnitTest/
+          if-no-files-found: warn
       - name: Run lint
         run: ./gradlew lintFdroidDebug --stacktrace
       - name: Upload lint report
