@@ -77,7 +77,7 @@ jobs:
           name: lint-report-fdroid-debug
           path: |
             app/build/reports/lint-results-fdroidDebug.html
-            app/build/intermediates/lint_intermediate_text_report/fdroidDebug/lintReport-fdroidDebug/lint-results-fdroidDebug.txt
+            app/build/reports/lint-results-fdroidDebug.txt
           if-no-files-found: warn
       - name: Build debug APK
         run: ./gradlew assembleFdroidDebug --stacktrace
