@@ -388,7 +388,15 @@ def merged_build_gradle(engine_text):
 
 def merged_manifest(engine_manifest):
     """Transform the engine manifest: our forwarder owns the launcher
-    filters; the engine MainActivity keeps its declaration only."""
+    filters; the engine MainActivity keeps its declaration only.
+
+    Phase 4: the forwarder also inherits the engine MainActivity's
+    launchMode (singleTask) and configChanges, so a second game-file
+    intent while Home is already running arrives via onNewIntent
+    instead of stacking a new Home instance; and it gains one extra
+    ACTION_SEND filter (the engine has none — it never reads
+    EXTRA_STREAM), so other apps can share a .jar/.jad with us.
+    """
     tree = ET.parse(engine_manifest)
     root = tree.getroot()
     app = root.find("application")
@@ -414,8 +422,41 @@ def merged_manifest(engine_manifest):
     forwarder.set(android_attr("name"), FORWARDER_CLASS)
     forwarder.set(android_attr("exported"), "true")
     forwarder.set(android_attr("theme"), FORWARDER_THEME)
+    # Inherit the entry-point behaviour from the engine MainActivity
+    # (verified at tag 1.8.2: singleTask + the orientation/screenSize
+    # configChanges). Without singleTask, onNewIntent in Home would
+    # never fire and every file intent would stack a new Home.
+    launch_mode = engine_main.get(android_attr("launchMode"))
+    if launch_mode != "singleTask":
+        raise ValueError("engine MainActivity is not singleTask "
+                         f"(found {launch_mode!r}); Home relies on it")
+    forwarder.set(android_attr("launchMode"), launch_mode)
+    config_changes = engine_main.get(android_attr("configChanges"))
+    if config_changes is None:
+        raise ValueError("engine MainActivity has no configChanges")
+    forwarder.set(android_attr("configChanges"), config_changes)
     for f in filters:
         forwarder.append(f)
+    # Phase 4: ACTION_SEND filter. The engine has no SEND support at
+    # all (no filter, never reads EXTRA_STREAM); Home extracts
+    # EXTRA_STREAM itself and forwards it as a VIEW data Uri to the
+    # engine MainActivity, so the filter lives here, on Home.
+    send_filter = ET.Element("intent-filter")
+    send_action = ET.Element("action")
+    send_action.set(android_attr("name"), "android.intent.action.SEND")
+    send_filter.append(send_action)
+    send_category = ET.Element("category")
+    send_category.set(android_attr("name"),
+                      "android.intent.category.DEFAULT")
+    send_filter.append(send_category)
+    for mime in ("application/java-archive",
+                 "application/x-java-archive",
+                 "application/java",
+                 "text/vnd.sun.j2me.app-descriptor"):
+        data = ET.Element("data")
+        data.set(android_attr("mimeType"), mime)
+        send_filter.append(data)
+    forwarder.append(send_filter)
     idx = list(app).index(engine_main)
     app.insert(idx + 1, forwarder)
     # Our own Phase 3 activities (no intent filters, not exported).
@@ -555,6 +596,58 @@ def apply_lint_fixes(root):
     return 0
 
 
+def apply_phase4_fixes(root):
+    """Phase 4: auto-run after a successful install.
+
+    Verified upstream behaviour at tag 1.8.2 (InstallerDialog
+    onProgress, STATUS_SUCCESS): the dialog shows "Application
+    successfully installed!" and turns its Install button into a
+    START button — the game only runs when the user taps it. The
+    launcher prompt requires the game to run automatically after a
+    successful import, so the merged dialog starts the game at once
+    instead (Config.startApp is the verified entry point; on a
+    game's first run it opens ConfigActivity, otherwise
+    MicroActivity directly). This is a deliberate behaviour change
+    vs upstream, applied only to the merged copy, asserted here.
+    Idempotent: if the patch marker is already present, skip.
+    """
+    print("== Step 9: apply Phase 4 import fixes ==")
+    path = (root / "app/src/main/java/ru/woesss/j2me/installer"
+            / "InstallerDialog.java")
+    text = path.read_text(encoding="utf-8")
+    marker = "// J2ME Emulator Phase 4: auto-run after install"
+    if marker in text:
+        print("  --   InstallerDialog auto-run already applied, skipped")
+        return 0
+    old = (
+        "\t\t\tbtnOk.setText(R.string.START_CMD);\n"
+        "\t\t\tbtnOk.setOnClickListener(v -> {\n"
+        "\t\t\t\tConfig.startApp(v.getContext(), app.getTitle(), "
+        "app.getPathExt(), false);\n"
+        "\t\t\t\tdismiss();\n"
+        "\t\t\t});\n"
+        "\t\t\tbtnClose.setText(R.string.close);\n"
+        "\t\t\tshowButtons();\n"
+        "\t\t\treturn;\n"
+    )
+    if text.count(old) != 1:
+        return fail("InstallerDialog auto-run patch: expected 1 "
+                    f"occurrence of the START-button block, found "
+                    f"{text.count(old)}")
+    new = (
+        "\t\t\t" + marker + " (launcher prompt requires the game\n"
+        "\t\t\t// to run automatically after a successful import;\n"
+        "\t\t\t// upstream showed a START button here instead).\n"
+        "\t\t\tConfig.startApp(requireActivity(), app.getTitle(), "
+        "app.getPathExt(), false);\n"
+        "\t\t\tdismiss();\n"
+        "\t\t\treturn;\n"
+    )
+    path.write_text(text.replace(old, new), encoding="utf-8")
+    print("  OK   InstallerDialog: auto-run on STATUS_SUCCESS")
+    return 0
+
+
 def final_checks(root):
     print("== Step 7: final checks ==")
     app_main = root / "app/src/main"
@@ -623,6 +716,7 @@ def final_checks(root):
     app = tree.getroot().find("application")
     launcher = []
     view_filters = []
+    send_filters = []
     micro = None
     for act in app.findall("activity"):
         for f in act.findall("intent-filter"):
@@ -632,6 +726,8 @@ def final_checks(root):
                 launcher.append(act.get(android_attr("name")))
             if "android.intent.action.VIEW" in actions:
                 view_filters.append(act.get(android_attr("name")))
+            if "android.intent.action.SEND" in actions:
+                send_filters.append(act.get(android_attr("name")))
         if act.get(android_attr("name")) == \
                 "javax.microedition.shell.MicroActivity":
             micro = act
@@ -641,6 +737,9 @@ def final_checks(root):
     if sorted(set(view_filters)) != [FORWARDER_CLASS]:
         return fail(f"VIEW filters must belong only to the forwarder, "
                     f"found: {sorted(set(view_filters))}")
+    if send_filters != [FORWARDER_CLASS]:
+        return fail("ACTION_SEND filter must belong only to the "
+                    f"forwarder, found: {send_filters}")
     if micro is None or micro.get(android_attr("exported")) != "false" \
             or micro.get(android_attr("process")) != ":midlet":
         return fail("MicroActivity must stay exported=false, "
@@ -657,9 +756,22 @@ def final_checks(root):
                 or act.get(android_attr("theme")) != FORWARDER_THEME:
             return fail(f"{cls} must be declared, exported=false, "
                         f"theme {FORWARDER_THEME}")
-    print("  OK   merged manifest: one LAUNCHER (Home), VIEW "
-          "filters only on Home, MicroActivity exported=false "
-          "in :midlet process, our Details/About activities declared")
+    if home.get(android_attr("launchMode")) != "singleTask":
+        return fail("Home must be singleTask so a second file intent "
+                    "arrives via onNewIntent")
+    if home.get(android_attr("configChanges")) is None:
+        return fail("Home must declare configChanges (inherited from "
+                    "the engine MainActivity)")
+    installer_dialog = (root / "app/src/main/java/ru/woesss/j2me"
+                        / "installer/InstallerDialog.java").read_text(
+                            encoding="utf-8")
+    if "// J2ME Emulator Phase 4: auto-run after install" \
+            not in installer_dialog:
+        return fail("InstallerDialog auto-run patch (Phase 4) missing")
+    print("  OK   merged manifest: one LAUNCHER (Home, singleTask), "
+          "VIEW + SEND filters only on Home, MicroActivity "
+          "exported=false in :midlet process, our Details/About "
+          "activities declared; InstallerDialog auto-runs on success")
     print(f"PASS: engine merged. {java_count} Java files in app.")
     return 0
 
@@ -702,6 +814,9 @@ def main(argv):
     write_settings(root)
     print("  OK   settings.gradle generated (include ':app', ':dexlib')")
     rc = apply_lint_fixes(root)
+    if rc:
+        return rc
+    rc = apply_phase4_fixes(root)
     if rc:
         return rc
     return final_checks(root)
