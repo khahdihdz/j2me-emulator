@@ -455,6 +455,12 @@ def apply_lint_fixes(root):
     * UseAppTint (2): listitem_checkable.xml and listitem_dir.xml use
       android:tint on an ImageView that already uses app:srcCompat;
       both layouts already declare xmlns:app. Fix: app:tint.
+    * StringFormatMatches, last one (CI run #17: 1 error left):
+      values-pt/strings.xml err_missing_app reads "Verifique a% de
+      disponibilidade" — the %s lost its 's', so lint parses "% d"
+      (percent, space, 'd' of "de") and it conflicts with the base
+      string's %s. The call site (ConfigActivity) passes one String
+      (storageName), so the fix is "a% de" -> "a%s de", matching base.
     The other two error groups are handled in merged_build_gradle:
     NewApi (4) by minSdk 19, MissingPermission (2) by a lint-only
     disable. Each replacement asserts exactly one occurrence; a
@@ -492,6 +498,20 @@ def apply_lint_fixes(root):
         ru_strings.write_text(text.replace(old_ru, new_ru),
                               encoding="utf-8")
         print("  OK   values-ru: alert string now takes 1 arg")
+    # Portuguese err_missing_app: "a% de" is a broken %s (see docstring).
+    pt_strings = root / "app/src/main/res/values-pt/strings.xml"
+    text = pt_strings.read_text(encoding="utf-8")
+    old_pt = "Verifique a% de disponibilidade"
+    new_pt = "Verifique a%s de disponibilidade"
+    if text.count(old_pt) == 0 and text.count(new_pt) == 1:
+        print("  --   values-pt err_missing_app already fixed, skipped")
+    elif text.count(old_pt) != 1:
+        return fail(f"values-pt err_missing_app fix: expected 1 "
+                    f"occurrence, found {text.count(old_pt)}")
+    else:
+        pt_strings.write_text(text.replace(old_pt, new_pt),
+                              encoding="utf-8")
+        print("  OK   values-pt: err_missing_app %s restored")
     for name in ("listitem_checkable.xml", "listitem_dir.xml"):
         path = root / "app/src/main/res/layout" / name
         text = path.read_text(encoding="utf-8")
@@ -557,6 +577,11 @@ def final_checks(root):
         return fail("values-ru alert string still takes 2 args "
                     "(StringFormatMatches)")
     print("  OK   lint fixes applied (format call, app:tint, ru string)")
+    if "Verifique a% de disponibilidade" in \
+            (root / "app/src/main/res/values-pt/strings.xml").read_text(
+                encoding="utf-8"):
+        return fail("values-pt err_missing_app still has broken %s "
+                    "(StringFormatMatches)")
     if ":dexlib" not in (root / "settings.gradle").read_text(
             encoding="utf-8"):
         return fail("settings.gradle does not include ':dexlib'")
