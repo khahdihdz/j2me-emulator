@@ -361,6 +361,19 @@ def merged_build_gradle(engine_text):
         "                'MissingPermission'\n",
         "lint: disable MissingPermission")
     replace_once(
+        "    flavorDimensions 'default'\n",
+        "    testOptions {\n"
+        "        // Phase 7: Android framework methods are stubs on the\n"
+        "        // JVM (\"Stub!\"). Unit tests must not crash on them —\n"
+        "        // e.g. Descriptor logs with android.util.Log when\n"
+        "        // parsing fails — so return default values instead.\n"
+        "        // This only affects unit tests; the app is unchanged.\n"
+        "        unitTests.returnDefaultValues = true\n"
+        "    }\n"
+        "\n"
+        "    flavorDimensions 'default'\n",
+        "testOptions: returnDefaultValues (Phase 7 unit tests)")
+    replace_once(
         "    signingConfigs {",
         "    compileOptions {\n"
         "        // Java 1.8 matches the effective default the pristine\n"
@@ -672,11 +685,14 @@ def final_checks(root):
             ("APP_VERSION_NAME", "versionName from env"),
             ("id 'org.jetbrains.kotlin.android'", "kotlin plugin"),
             ("minSdk 19", "minSdk 19 (NewApi fix)"),
-            ("'MissingPermission'", "lint MissingPermission disable")):
+            ("'MissingPermission'", "lint MissingPermission disable"),
+            ("unitTests.returnDefaultValues = true",
+             "testOptions returnDefaultValues")):
         if needle not in gradle:
             return fail(f"merged app/build.gradle missing {what}")
     print("  OK   merged app/build.gradle (applicationId, namespace, "
-          "env versions, kotlin plugin, minSdk 19, lint disable)")
+          "env versions, kotlin plugin, minSdk 19, lint disable, "
+          "testOptions returnDefaultValues)")
     main_activity = (root / "app/src/main/java/ru/playsoftware"
                      / "j2meloader/MainActivity.java").read_text(
                          encoding="utf-8")
