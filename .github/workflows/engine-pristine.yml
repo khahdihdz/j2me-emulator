@@ -80,6 +80,13 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x vendor/j2me-loader/gradlew
 
+      # Upstream app/build.gradle line 32 loads keystore.properties
+      # unconditionally in signingConfigs.release, even for debug builds.
+      # A dummy file lets Gradle configuration pass; debug builds do not
+      # sign with it. No real key or password is used here.
+      - name: Create dummy keystore.properties
+        working-directory: vendor/j2me-loader
+        run: printf 'keyAlias=dummy\nkeyPassword=dummy\nstoreFile=dummy.jks\nstorePassword=dummy\n' > keystore.properties
       - name: Build pristine engine (fdroidDebug)
         # Task verified from upstream app/build.gradle at 1.8.2:
         # flavours play/open/fdroid/dev (FULL_EMULATOR=true) + midlet
