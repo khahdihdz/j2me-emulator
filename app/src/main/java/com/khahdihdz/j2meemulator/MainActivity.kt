@@ -1,50 +1,68 @@
 package com.khahdihdz.j2meemulator
 
+import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+import ru.playsoftware.j2meloader.MainActivity as EngineMainActivity
 
 /**
- * Skeleton launcher (v0.1.0).
+ * Launcher entry point (v0.1.0, after the engine merge).
  *
- * Honest status: the J2ME Loader engine is NOT integrated yet, so this
- * activity cannot import or run any game. It only receives an ACTION_VIEW
- * intent for a .jar/.jad file (same guard as upstream MainActivity:
- * only when savedInstanceState == null and the intent was not restored
- * from history) and shows what was received.
+ * This activity is only a forwarder. It never draws anything (theme
+ * `Theme.NoDisplay` in the merged manifest) and it owns the MAIN/LAUNCHER
+ * and ACTION_VIEW intent filters for .jar/.jad/.kjx files, so the app has
+ * exactly one launcher icon and one receiver for game files.
  *
- * No engine API is called here — Config.startApp() / MicroActivity /
- * AppInstaller do not exist in this module yet (see docs/ENGINE-INTEGRATION.md).
+ * Everything real happens in the engine activity
+ * `ru.playsoftware.j2meloader.MainActivity` (verified at upstream tag 1.8.2):
+ * - Cold start: its onCreate hosts `AppsListFragment.newInstance(uri)`,
+ *   and `AppsListFragment.onDbUpdated` shows
+ *   `InstallerDialog.newInstance(uri)` when a file Uri was received.
+ * - Warm start: its onNewIntent shows `InstallerDialog.newInstance(uri)`.
+ * - After a successful install, `InstallerDialog` calls
+ *   `Config.startApp(context, app.title, app.pathExt, false)`, which opens
+ *   `ConfigActivity` on first run or `MicroActivity` directly afterwards.
+ *
+ * Why a forwarder instead of launching the engine activity directly?
+ * Keeping the engine's MainActivity as the launcher would also work, but
+ * then every launcher change in Phase 3 would mean editing engine files.
+ * The forwarder keeps all of our own entry-point code in one small file
+ * and leaves the engine sources untouched. It deliberately does NOT call
+ * `InstallerDialog` or `Config.startApp` itself: those are Fragment /
+ * post-install APIs that belong to the engine activity's lifecycle.
+ *
+ * History guard: like the engine's MainActivity, a Uri restored from
+ * history (FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) is not forwarded again,
+ * so reopening the app from Recents cannot re-trigger an install.
+ * Recreation (savedInstanceState != null) just finishes: the engine
+ * activity is already in this task.
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        val statusView: TextView = findViewById(R.id.status_text)
-        val receivedView: TextView = findViewById(R.id.received_text)
-
-        if (savedInstanceState == null &&
-            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
-        ) {
-            val uri = intent.data
-            if (uri != null) {
-                receivedView.text = getString(R.string.received_file, uri.toString())
-            } else {
-                receivedView.text = getString(R.string.no_file_received)
-            }
-        } else {
-            receivedView.text = getString(R.string.no_file_received)
+        if (savedInstanceState != null) {
+            finish()
+            return
         }
-        statusView.text = getString(R.string.engine_not_integrated)
+        forward(intent)
+        finish()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Phase 4 will route a new intent to the installer dialog.
-        // Skeleton behaviour: ignore it and keep showing the status screen.
-        setIntent(intent)
+        forward(intent)
+        finish()
+    }
+
+    private fun forward(source: Intent?) {
+        val target = Intent(this, EngineMainActivity::class.java)
+        if (source != null &&
+            (source.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        ) {
+            source.data?.let { target.data = it }
+            target.action = source.action
+        }
+        startActivity(target)
     }
 }
