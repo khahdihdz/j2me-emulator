@@ -83,8 +83,8 @@ JDK 17 works with the same AGP 8.5.1 / Gradle 8.7.
 ### `Config.startApp()` — the only entry point to run an installed game
 
 File: `app/src/main/java/ru/playsoftware/j2meloader/config/Config.java`
-(verified at an older commit `db0b9d6f` in Phase 1; must be re-diffed
-against tag 1.8.2 before coding against it):
+(re-verified by direct read at tag 1.8.2 on 2026-11-27; the
+`startApp` bodies below are the 1.8.2 text):
 
 ```java
 public static void startApp(Context context, String name, String path, boolean showSettings)
@@ -180,12 +180,16 @@ public static void startApp(Context context, String name, String path,
    JDK/AGP/NDK/SDK. Only after that build passes, change
    `applicationId`/`namespace` to `com.khahdihdz.j2meemulator` and add the
    launcher UI.
-2. Keep the engine's `app` module as the main module; keep package
-   `ru.playsoftware.j2meloader` for engine Java code if renaming proves
-   risky (least-risk option for v0.1.0), changing only `applicationId`,
-   `namespace`, and the `FileProvider`/`DocumentProvider` authorities
-   (`${applicationId}.provider` / `${applicationId}.documentProvider`).
-   Record the decision in the README when it is made.
+2. Keep the engine's `app` module as the main module. DECIDED
+   (2026-11-27, after reading the 1.8.2 sources): **namespace stays
+   `ru.playsoftware.j2meloader`; only `applicationId` changes** to
+   `com.khahdihdz.j2meemulator`. Engine sources import
+   `ru.playsoftware.j2meloader.R` and `.BuildConfig` explicitly
+   (`Config.java`, `MicroActivity.java`, `InstallerDialog.java`,
+   `EmulatorApplication.java`) and unqualified `R` references in that
+   package resolve there too, so renaming the namespace would break
+   compilation of the engine. Providers use `${applicationId}`, so
+   their authorities follow the new applicationId automatically.
 3. Launcher (this repo's code) calls the engine only through
    `InstallerDialog`/`AppListModel` for install and `Config.startApp()`
    for launch. It must create a default per-game config before first
@@ -235,22 +239,22 @@ clone of J2ME Loader is read, run, copied, or built in this workspace.
   exist in `vendor/j2me-loader` and prints the toolchain values and
   `Constants` values read from the engine's own files. Exit 1 on any
   missing required path.
-- KNOWN RISK, unverified — `keystore.properties`: upstream
-  `app/build.gradle` `signingConfigs.release` eagerly loads
+- KNOWN RISK, CONFIRMED by pristine run #1 — `keystore.properties`:
+  upstream `app/build.gradle` `signingConfigs.release` eagerly loads
   `keystore.properties` via `FileInputStream` unless `BITRISE_IO` is
-  set (upstream master CI creates the file from secrets before
-  building). A debug build may still fail at Gradle configuration with
-  `FileNotFoundException` for that file. The pristine workflow
-  deliberately does NOT create a dummy file, so the run will confirm
-  or refute this. If it fails that way, the fix is a dummy
-  `keystore.properties` step before the build.
-- After the pristine build passes, the next step is a merge script
-  (**not written yet**) that folds the engine source into this repo's
-  `app` module (keeping `dexlib`, native code, assets and manifests),
-  changes `applicationId`/`namespace`, and wires the launcher. That
-  script must run on GitHub Actions as well (or be delivered as
-  file-by-file uploads), because the local workspace must not process
-  a local engine clone.
+  set. Pristine run #1 failed at Gradle configuration with
+  `FileNotFoundException` for that file (app/build.gradle line 32).
+  The fix, used in both `engine-pristine.yml` (run #2, Success) and
+  `ci.yml`, is a step that writes a dummy `keystore.properties`
+  (all values `dummy`, no real key) into the engine checkout / repo
+  root before Gradle configures. Debug builds do not sign with it.
+- After the pristine build passes, the merge is done by
+  `tools/merge-engine.py` (written 2026-11-27, see §7), which runs on
+  GitHub Actions inside `ci.yml` after the upstream checkout. It folds
+  the engine source into this repo's `app` module (keeping `dexlib`,
+  native code, assets and manifests) and generates the merged
+  `app/build.gradle`, `AndroidManifest.xml` and `settings.gradle`.
+  No engine files are committed to this repo.
 
 ## 5. Risks / open items
 
@@ -268,7 +272,130 @@ clone of J2ME Loader is read, run, copied, or built in this workspace.
   were flagged in Phase 1 from a secondary source only — check the
   license headers in `app/src/main/cpp` and `assets` directly before
   release, and keep every NOTICE.
-- `Constants.java` values above are from tag 1.8.2; `Config.java` /
-  `MicroActivity` / `MicroLoader` / `AppInstaller` / `Descriptor` logic
-  was verified at commit `db0b9d6f` in Phase 1 and must be re-diffed
-  against `1.8.2` before code is written against it.
+- `Config.java`, `MicroActivity.java` (head + manifest entry),
+  `AppInstaller.java` (head), `InstallerDialog.java` (full),
+  `AppsListFragment.java` (install entry points), `MainActivity.java`
+  (full), `Constants.java` (full), `EmulatorApplication.java` (head)
+  and `NotificationBroadcastReceiver.java` (existence) were all
+  re-read at tag 1.8.2 on 2026-11-27. NOT yet fully re-read at 1.8.2:
+  `MicroLoader.java` (fetched; only the class declaration verified)
+  and `Descriptor.java` (not re-read); the install flow below the
+  `InstallerDialog` layer still rests on the Phase 1 read for those
+  two files.
+
+## 7. Merge on CI — tools/merge-engine.py (written 2026-11-27)
+
+The merge runs on GitHub Actions inside `.github/workflows/ci.yml`,
+after the upstream 1.8.2 checkout and NDK install. No engine file is
+committed to this repo; the merged tree exists only in the CI runner.
+`tools/merge-engine.py` (Python stdlib, no network) does, in order:
+
+1. Reuses `tools/check-engine-pristine.py` to verify the checkout.
+2. Copies engine Java trees `ru/`, `javax/`, `org/`, `com/` from
+   `app/src/main/java/` into our `app/src/main/java/` (plus
+   `app/src/androidTest` / `app/src/test` if the tag has them).
+3. Copies engine `res/`, `assets/`, `cpp/` into `app/src/main/`.
+   Values files are merged by resource name (engine wins on a clash).
+   Verified: there is NO name clash between skeleton and engine for
+   strings (249 engine vs 5 skeleton), colors (13 vs 7) or styles
+   (13 engine vs 1 skeleton `Theme.J2MEEmulator`). One special case:
+   the skeleton's `<string name="app_name">` is DROPPED — the engine
+   generates `app_name` with `resValue` from `rootProject.name`, and a
+   second XML definition would be a duplicate resource.
+4. Copies engine `app/*.pro` files and the whole `dexlib/` module to
+   the repo root (`dexlib/build.gradle` verified at 1.8.2: library
+   module, namespace `com.android.dx`).
+5. Generates `app/build.gradle` from the engine's file by text
+   replacement with assertions (fails loudly if a pattern is absent):
+   adds the `org.jetbrains.kotlin.android` plugin; KEEPS namespace
+   `ru.playsoftware.j2meloader` (see §4 step 2); `applicationId` →
+   `com.khahdihdz.j2meemulator`; `versionCode`/`versionName` from
+   `APP_VERSION_CODE` / `APP_VERSION_NAME` env (defaults 1 / "0.1.0");
+   adds `compileOptions` / `kotlinOptions` at Java **1.8** — deliberate,
+   it matches the effective default the pristine engine build used;
+   the skeleton used Java 17, do not raise this without rebuilding the
+   engine sources against it first. Everything else (signingConfigs,
+   all five flavours play/open/fdroid/dev/midlet, bundle splits,
+   ndkBuild, `applicationVariants`, viewBinding, full dependency list)
+   is kept verbatim. Flavours kept, not dropped: `fdroid` is the CI
+   build flavour; `dev` calls `generateVersionCode()` (`git rev-list
+   HEAD --count`, works in a CI checkout); `midlet` only reads
+   `src/midlet/.../MANIFEST.MF` if that file exists.
+6. Generates `AndroidManifest.xml` from the engine's manifest: the
+   four intent-filters are MOVED from the engine `.MainActivity` to
+   our forwarder activity (see §8); everything else (application
+   attrs, ConfigActivity, MicroActivity, Settings/KeyMapper/FilePicker/
+   Profiles activities, both providers, the Nokia receiver, all 14
+   permissions) is kept verbatim. Generates `settings.gradle` with
+   `rootProject.name = "J2ME Emulator"`, `include ':app', ':dexlib'`.
+7. Final checks (exit 1 on failure): all required engine classes
+   present (including `NotificationBroadcastReceiver`, referenced by
+   the manifest); merged `build.gradle` contains the new
+   `applicationId`, kept namespace, env versions and kotlin plugin;
+   `settings.gradle` includes `:dexlib`; merged manifest has exactly
+   one MAIN/LAUNCHER (the forwarder), VIEW filters only on the
+   forwarder, and MicroActivity `exported=false` in process `:midlet`.
+
+Tested on 2026-11-27 against a mock engine tree built from real
+1.8.2 files fetched via the GitHub API (11 Java files, real manifest,
+real build.gradle, real strings/colors): script exits 0, the merged
+manifest/build.gradle/strings pass the checks above (253 strings =
+249 engine + 4 skeleton, `app_name` absent; 20 colors = 13 + 7), and
+re-running the script produces byte-identical outputs (idempotent).
+That test used a PARTIAL tree (no `org/` sources, no assets, no
+`androidTest`), so it proves the script's logic, not the real build.
+The real build is proven only by the CI run after this merge lands.
+
+## 8. Launcher after the merge
+
+- Sole launcher: `com.khahdihdz.j2meemulator.MainActivity` — a thin
+  forwarder (`android.app.Activity`, `Theme.NoDisplay`, finishes in
+  `onCreate`). It owns MAIN/LAUNCHER and all four ACTION_VIEW
+  intent-filters. It forwards `intent.data` (guarded by the same
+  `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY` check as the engine) to the
+  engine activity with an explicit `Intent`, then finishes. It calls
+  no other engine API and draws no UI.
+- Real launcher: `ru.playsoftware.j2meloader.MainActivity` (engine,
+  kept, but its MAIN/LAUNCHER and VIEW filters are stripped by the
+  merge). Verified flow at 1.8.2: cold start → `AppsListFragment.
+  newInstance(uri)` → `onDbUpdated` shows `InstallerDialog.
+  newInstance(uri)`; warm start → `onNewIntent` shows the same
+  dialog; install success → `Config.startApp(context, title,
+  pathExt, false)` → `ConfigActivity` on first run, `MicroActivity`
+  afterwards. The forwarder does NOT call `InstallerDialog` or
+  `Config.startApp` itself — those belong to the engine activity's
+  lifecycle, and calling them from a `Theme.NoDisplay` activity would
+  be wrong.
+- Branding note: the merged app uses the engine's `@mipmap/ic_launcher`
+  and `@style/AppTheme` (dark `DayNight` theme) because the whole
+  engine `res/` tree is copied. The skeleton's light blue theme
+  (`Theme.J2MEEmulator`) survives the merge unused. Replacing the icon
+  and theme with our own branding is Phase 3 work, not merge work.
+- Debug label note: the engine's `applicationVariants` block sets
+  `app_name` to `'JL-Debug'` for debug builds of non-midlet flavours,
+  so the merged debug APK is labelled "JL-Debug". Release builds get
+  `app_name` from `rootProject.name` ("J2ME Emulator").
+
+## 9. What can still fail on CI (unverified until the merged run)
+
+- The full engine source tree is hundreds of Java files; the mock test
+  covered 11. A missing `org/` or `com/` subtree in the real checkout
+  would fail compilation — the script only WARNS on their absence.
+  (The pristine build proved the full tree builds as upstream, so the
+  risk is a checkout/copy problem, not engine code.)
+- Engine unit tests, if the tag has any under `app/src/test`, run as
+  `testFdroidDebugUnitTest`; their status at 1.8.2 was never checked.
+- `lintFdroidDebug` may surface new lint findings from engine code;
+  the engine's own lint block only disables `MissingTranslation` and
+  `ExtraTranslation`.
+- The `dev` flavour's `generateVersionCode()` runs `git rev-list`;
+  the CI build uses the `fdroid` flavour, so this is not on the
+  critical path.
+- Release builds (`assembleFdroidRelease`) still need a
+  `keystore.properties` at Gradle configuration time; the CI dummy
+  file lets configuration pass, but real release signing is Phase 9
+  (apksign workflow signs the APK itself with apksigner — the Gradle
+  `signingConfig` path is a separate, still-open question for then).
+- The merged manifest is rewritten by `xml.etree.ElementTree`, so
+  formatting and comments from the engine manifest are lost; only
+  structure and values are preserved (verified by the final checks).
