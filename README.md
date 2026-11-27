@@ -9,7 +9,7 @@ bên trong, đóng gói thành một APK độc lập. Không yêu cầu cài J2
 - Ngôn ngữ: Kotlin + Java (engine dùng Java)
 - Build: Gradle + Android Gradle Plugin
 
-## Trạng thái hiện tại: engine đã tích hợp (Giai đoạn 2), launcher Home/Details/About xong (Giai đoạn 3), import JAR/JAD xong (Giai đoạn 4)
+## Trạng thái hiện tại: engine đã tích hợp (Giai đoạn 2), launcher Home/Details/About xong (Giai đoạn 3), import JAR/JAD xong (Giai đoạn 4), quản lý thư viện xong (Giai đoạn 5), điều khiển/orientation xong (Giai đoạn 6), tests xong (Giai đoạn 7)
 
 Engine J2ME Loader 1.8.2 đã được hợp nhất vào app qua script
 `tools/merge-engine.py` chạy trên GitHub Actions, và CI trên nhánh
@@ -17,8 +17,7 @@ Engine J2ME Loader 1.8.2 đã được hợp nhất vào app qua script
 debug APK). Home hiển thị danh sách game đã cài, mở file
 `.jar`/`.jad`/`.kjx` qua ACTION_VIEW/ACTION_SEND hoặc trình chọn file
 (SAF), và chạy game sau khi import thành công. **Chưa cài/chơi thử
-trên máy thật.** Các giai đoạn còn lại (quản lý thư viện, điều khiển,
-tests, ký release v0.1.0) xem trong
+trên máy thật.** Các giai đoạn còn lại (ký release v0.1.0) xem trong
 [`docs/ENGINE-INTEGRATION.md`](docs/ENGINE-INTEGRATION.md).
 
 ## Engine
