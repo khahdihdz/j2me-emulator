@@ -262,10 +262,10 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.pref_app_sort_title)
             .setItems(labels) { dialog, which ->
-                var variant = which
-                if (appRepository.sort == which) {
-                    variant = variant or Int.MIN_VALUE
-                }
+                // Phase 7 — direction toggle is LibraryRules.toggleSort
+                // (unit-tested): picking the active variant flips its
+                // direction bit, picking another selects it ascending.
+                val variant = LibraryRules.toggleSort(appRepository.sort, which)
                 PreferenceManager.getDefaultSharedPreferences(this)
                     .edit()
                     .putInt(Constants.PREF_APP_SORT, variant)
@@ -294,48 +294,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Extract the game-file Uri from an intent, or null when the
-     * intent carries no game file. ACTION_VIEW carries it in data;
-     * ACTION_SEND carries it in EXTRA_STREAM (the engine never reads
-     * EXTRA_STREAM, so Home must). A Uri restored from history is
-     * ignored, like the engine MainActivity does. */
+     * intent carries no game file. The decision itself is the pure
+     * [GameUriRules.pickIntentUri] rule (Phase 7, unit-tested); this
+     * only extracts the strings from the Intent and parses the
+     * result back into a Uri. */
     private fun gameUriFromIntent(source: Intent?): Uri? {
         if (source == null) return null
-        if ((source.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) {
-            return null
-        }
-        return when (source.action) {
-            Intent.ACTION_VIEW -> source.data
-            Intent.ACTION_SEND ->
-                source.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            Intent.ACTION_SEND_MULTIPLE ->
+        val uriString = GameUriRules.pickIntentUri(
+            action = source.action,
+            data = source.data?.toString(),
+            stream = if (source.action == Intent.ACTION_SEND) {
+                source.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.toString()
+            } else {
+                null
+            },
+            streams = if (source.action == Intent.ACTION_SEND_MULTIPLE) {
                 source.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                    ?.firstOrNull()
-            else -> null
-        }
+                    ?.map { it.toString() }
+            } else {
+                null
+            },
+            fromHistory = (source.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+        ) ?: return null
+        return Uri.parse(uriString)
     }
 
     /**
      * Lenient pre-check, only to give the user a clear Vietnamese
-     * error for what is obviously not a game file. Returns an error
-     * message, or null when the Uri may be a game file and the engine
-     * should decide (it sniffs magic bytes for content:// and parses
-     * the JAD/manifest itself).
+     * error for what is obviously not a game file. The rule itself is
+     * [GameUriRules.validate] (Phase 7, unit-tested); this only maps
+     * its result to a string resource. Returns an error message, or
+     * null when the Uri may be a game file and the engine should
+     * decide (it sniffs magic bytes for content:// and parses the
+     * JAD/manifest itself).
      */
     private fun validateGameUri(uri: Uri): String? {
-        val scheme = uri.scheme?.lowercase()
-        if (scheme != "file" && scheme != "content"
-            && scheme != "http" && scheme != "https"
-        ) {
-            return getString(R.string.import_error_bad_scheme)
+        return when (GameUriRules.validate(uri.scheme, uri.path)) {
+            GameUriRules.Error.BAD_SCHEME ->
+                getString(R.string.import_error_bad_scheme)
+            GameUriRules.Error.BAD_EXTENSION ->
+                getString(R.string.import_error_bad_extension)
+            null -> null
         }
-        val path = uri.path ?: ""
-        val extension = path.substringAfterLast('.', "").lowercase()
-        if (extension.isNotEmpty()
-            && extension != "jar" && extension != "jad" && extension != "kjx"
-        ) {
-            return getString(R.string.import_error_bad_extension)
-        }
-        return null
     }
 
     /** Forward a validated game-file Uri to the engine MainActivity
@@ -439,17 +439,17 @@ class MainActivity : AppCompatActivity() {
 
         /**
          * Phase 5 — filter. Same match rule as the engine
-         * AppsListAdapter.AppFilter at 1.8.2: a game matches when its
-         * lowercased title or author contains the lowercased query;
-         * an empty query shows everything.
+         * AppsListAdapter.AppFilter at 1.8.2, now [LibraryRules.matches]
+         * (Phase 7, unit-tested): a game matches when its lowercased
+         * title or author contains the lowercased query; an empty
+         * query shows everything.
          */
         private fun applyFilter() {
             shownItems = if (query.isEmpty()) {
                 allItems
             } else {
                 allItems.filter { item ->
-                    item.title.lowercase().contains(query)
-                        || item.author.lowercase().contains(query)
+                    LibraryRules.matches(item.title, item.author, query)
                 }
             }
             updateEmptyText()
