@@ -82,6 +82,25 @@
                     android:textColor="@color/textSecondary"
                     android:textSize="12sp" />
 
+                <!-- Phase 6 — per-game orientation and virtual keyboard,
+                     read from the game's own config (see
+                     GameDetailsActivity). Edit them via "Cài đặt game". -->
+                <TextView
+                    android:id="@+id/details_orientation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/details_keyboard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
