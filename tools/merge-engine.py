@@ -445,7 +445,13 @@ def apply_lint_fixes(root):
       neutral-button label, used separately at the next line).
       Passing the extra arg is harmless at runtime (String.format
       ignores extras) but lint flags the call site and every locale's
-      definition of the string. Fix: pass only emulatorDir.
+      definition of the string. Fix: pass only emulatorDir, AND fix
+      the one locale that disagrees — values-ru/strings.xml gives
+      the same string TWO placeholders (%1$s path, %2$s button),
+      so after the call-site fix lint flags ru instead (CI run #15:
+      2 errors left). Fix: drop the ", нажав кнопку %2$s," clause
+      from the Russian text, keeping its meaning (the button is
+      still shown as the dialog's neutral button).
     * UseAppTint (2): listitem_checkable.xml and listitem_dir.xml use
       android:tint on an ImageView that already uses app:srcCompat;
       both layouts already declare xmlns:app. Fix: app:tint.
@@ -470,6 +476,22 @@ def apply_lint_fixes(root):
     else:
         main_activity.write_text(text.replace(old, new), encoding="utf-8")
         print("  OK   MainActivity: format call now passes 1 arg")
+    # Russian translation of the same string has 2 placeholders while
+    # the base string and the other 17 locales have 1; see docstring.
+    ru_strings = root / "app/src/main/res/values-ru/strings.xml"
+    text = ru_strings.read_text(encoding="utf-8")
+    old_ru = ", нажав кнопку %2$s,"
+    new_ru = ""
+    if text.count(old_ru) == 0 and \
+            "Вы можете выбрать другую сейчас и в любое время" in text:
+        print("  --   values-ru alert string already 1-arg, skipped")
+    elif text.count(old_ru) != 1:
+        return fail(f"values-ru alert string fix: expected 1 "
+                    f"occurrence, found {text.count(old_ru)}")
+    else:
+        ru_strings.write_text(text.replace(old_ru, new_ru),
+                              encoding="utf-8")
+        print("  OK   values-ru: alert string now takes 1 arg")
     for name in ("listitem_checkable.xml", "listitem_dir.xml"):
         path = root / "app/src/main/res/layout" / name
         text = path.read_text(encoding="utf-8")
@@ -529,7 +551,12 @@ def final_checks(root):
         if "android:tint" in (root / "app/src/main/res/layout"
                               / name).read_text(encoding="utf-8"):
             return fail(f"{name} still uses android:tint (UseAppTint)")
-    print("  OK   lint fixes applied (format call, app:tint)")
+    if ", нажав кнопку %2$s," in (root / "app/src/main/res/values-ru"
+                                 / "strings.xml").read_text(
+                                     encoding="utf-8"):
+        return fail("values-ru alert string still takes 2 args "
+                    "(StringFormatMatches)")
+    print("  OK   lint fixes applied (format call, app:tint, ru string)")
     if ":dexlib" not in (root / "settings.gradle").read_text(
             encoding="utf-8"):
         return fail("settings.gradle does not include ':dexlib'")
