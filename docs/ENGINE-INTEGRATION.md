@@ -407,6 +407,19 @@ The real build is proven only by the CI run after this merge lands.
   The lint-report artifact of run #12 contained only the HTML report;
   the .txt path in ci.yml was corrected to
   app/build/reports/lint-results-fdroidDebug.txt.
+- **CI run #15** (https://github.com/khahdihdz/j2me-emulator/actions/runs/45988963639,
+  commits b8114c5 lint fixes, e0ae8d1 ci.yml, 7b5de51 docs): lint down
+  to **2 errors, 196 warnings** — the other 25 fixed. The 2 left are
+  the same StringFormatMatches root cause seen from the other side:
+  values-ru/strings.xml:21 gives alert_msg_workdir_not_exists TWO
+  placeholders (%1$s path, %2$s button label) while the base string
+  and the other 17 locales have ONE, so the 1-arg call now fails for
+  ru, and the midlet sample's com/example/kdlauncher/MainActivity.java:163
+  (also 1 arg) fails the same way. Fix in the merge script: drop the
+  ", нажав кнопку %2$s," clause from the Russian text (meaning kept;
+  the button is still the dialog's neutral button). The other two
+  %2$s uses in values-ru (reinstall_newest, reinstall_older) are
+  untouched and verified to stay.
 - The `dev` flavour's `generateVersionCode()` runs `git rev-list`;
   the CI build uses the `fdroid` flavour, so this is not on the
   critical path.
