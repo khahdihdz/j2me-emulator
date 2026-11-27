@@ -44,4 +44,17 @@
     <string name="import_error_title">Không mở được file này</string>
     <string name="import_error_bad_extension">File phải có đuôi .jar, .jad hoặc .kjx.</string>
     <string name="import_error_bad_scheme">Không hỗ trợ đường dẫn này. Chỉ nhận file trên máy, file được chia sẻ, hoặc liên kết .jad trên mạng.</string>
+    <!-- Phase 5 — library search/sort on Home, delete in Details (ours).
+         Names do not exist in the engine's 249 strings at tag 1.8.2. -->
+    <string name="home_search_hint">Tìm theo tên hoặc tác giả…</string>
+    <string name="home_sort">Sắp xếp</string>
+    <string name="home_no_results">Không tìm thấy game nào khớp.</string>
+    <string name="details_folder">Thư mục: %1$s</string>
+    <string name="details_size">Kích thước: %1$s</string>
+    <string name="details_size_unknown">Kích thước: không xác định</string>
+    <string name="details_delete">Xóa game</string>
+    <string name="details_delete_title">Xóa game này?</string>
+    <string name="details_delete_message">Xóa “%1$s” khỏi thư viện? Dữ liệu đã lưu và cài đặt của game sẽ bị xóa cùng. File .jar/.jad gốc sẽ được giữ nguyên.</string>
+    <string name="details_deleted">Đã xóa %1$s. File gốc vẫn còn nguyên.</string>
+    <string name="details_delete_failed">Không xóa được %1$s.</string>
 </resources>
