@@ -136,6 +136,20 @@ def copy_java_sources(engine, app_src):
         if src.is_dir():
             shutil.copytree(src, app_src.parent / srcset, dirs_exist_ok=True)
             print(f"  OK   app/src/{srcset}/ copied")
+    # Other source sets the merged build.gradle evaluates at
+    # configuration time: 'midlet' holds the sample MIDlet manifest
+    # that the midlet product flavour reads with
+    # getMidletManifestProperties() -> props.getValue('MIDlet-Name')
+    # .trim(). Without this copy the merged build fails at
+    # configuration time with "Cannot invoke method trim() on null
+    # object" (CI run #10, app/build.gradle line 116), even when
+    # building fdroidDebug, because productFlavors are evaluated for
+    # every flavour. 'debug' is copied for the same reason.
+    for srcset in ("midlet", "debug"):
+        src = engine / "app/src" / srcset
+        if src.is_dir():
+            shutil.copytree(src, app_src.parent / srcset, dirs_exist_ok=True)
+            print(f"  OK   app/src/{srcset}/ copied")
     return copied
 
 
@@ -429,6 +443,15 @@ def final_checks(root):
             encoding="utf-8"):
         return fail("settings.gradle does not include ':dexlib'")
     print("  OK   settings.gradle includes ':dexlib'")
+    midlet_manifest = (root / "app/src/midlet/resources/MIDLET-META-INF"
+                       / "MANIFEST.MF")
+    if not midlet_manifest.is_file():
+        return fail("app/src/midlet manifest missing after merge: "
+                    "the midlet flavour reads MIDlet-Name from it at "
+                    "Gradle configuration time and fails with "
+                    "'Cannot invoke method trim() on null object' "
+                    "without it (CI run #10)")
+    print("  OK   app/src/midlet sample manifest present")
     tree = ET.parse(app_main / "AndroidManifest.xml")
     app = tree.getroot().find("application")
     launcher = []
