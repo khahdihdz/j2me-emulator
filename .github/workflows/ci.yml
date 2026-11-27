@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    name: Build skeleton
+    name: Build merged app
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,21 +26,51 @@ jobs:
           java-version: "17"
           cache: gradle
       # No setup-android step: ubuntu-latest already ships an Android SDK
-      # (ANDROID_HOME set). android-actions/setup-android@v3 failed in run #1
-      # because it tries to install the obsolete 'tools' package via sdkmanager.
+      # (ANDROID_HOME set). android-actions/setup-android@v3 failed in our
+      # CI run #1 because it tries to install the obsolete 'tools' package.
       - name: Check Android SDK
         run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/build-tools" && ls "$ANDROID_HOME/platforms"
+      - name: Checkout upstream J2ME Loader 1.8.2
+        # Same checkout as engine-pristine.yml: .gitmodules only declares
+        # the submodule (no gitlink was ever committed), so a recursive
+        # submodule checkout of our own repo would fetch nothing.
+        uses: actions/checkout@v4
+        with:
+          repository: nikita36078/J2ME-Loader
+          ref: "1.8.2"
+          path: vendor/j2me-loader
+          submodules: true
+      - name: Install NDK 22.1.7171670
+        # The engine builds native M3G via ndkBuild (src/main/cpp/Android.mk)
+        # with ndkVersion 22.1.7171670; the preinstalled NDKs do not
+        # satisfy it. Proven by the pristine build (run #2, Success).
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;22.1.7171670"
+          ls "$ANDROID_HOME/ndk/22.1.7171670"
+      - name: Verify engine checkout
+        run: python3 tools/check-engine-pristine.py vendor/j2me-loader
+      - name: Create dummy keystore.properties
+        # The merged app/build.gradle (from upstream) loads
+        # keystore.properties at Gradle configuration time, even for
+        # debug builds. Dummy values only; debug builds do not sign
+        # with it. Real release signing is Phase 9 (apksign workflow).
+        run: printf 'keyAlias=dummy\nkeyPassword=dummy\nstoreFile=dummy.jks\nstorePassword=dummy\n' > keystore.properties
+      - name: Merge engine into app
+        run: python3 tools/merge-engine.py vendor/j2me-loader
       - name: Make gradlew executable
         run: chmod +x gradlew
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        # Flavour tasks: the merge adds product flavours, so the plain
+        # testDebugUnitTest task no longer exists; fdroid is the
+        # full-emulator flavour with no Play signing requirements.
+        run: ./gradlew testFdroidDebugUnitTest --stacktrace
       - name: Run lint
-        run: ./gradlew lintDebug --stacktrace
+        run: ./gradlew lintFdroidDebug --stacktrace
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleFdroidDebug --stacktrace
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: j2me-emulator-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: j2me-emulator-fdroid-debug-apk
+          path: app/build/outputs/apk/fdroid/debug/*.apk
           if-no-files-found: error
