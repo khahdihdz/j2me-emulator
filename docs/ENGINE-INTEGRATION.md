@@ -64,8 +64,19 @@ tag's tree). On `master` it contains exactly one submodule:
 url `https://github.com/schellingb/TinySoundFont.git`. Before building
 native code at 1.8.2, check which submodules (if any) that tag needs.
 
-**Upstream CI workflow at 1.8.2: UNKNOWN** — `.github/workflows/*` content
-was not read in this pass.
+**Upstream CI workflow at 1.8.2: NONE — verified absent.** `get_file_contents`
+on `.github/workflows` at ref `1.8.2` returns "path does not point to a
+file or directory". There is no upstream CI to copy for tag 1.8.2, so the
+JDK/SDK/NDK that upstream used to build 1.8.2 is UNKNOWN from upstream.
+On `master` (commit `e8124df`, NOT 1.8.2) there is exactly one workflow,
+`.github/workflows/release.yml` ("Automated CI builds"): checkout@v7 with
+`submodules: true`, JDK **21** (setup-java@v6, Temurin), Gradle cache,
+keystore + `keystore.properties` decoded from secrets `SIGNING_KEY` /
+`KEYSTORE_PROPERTIES`, build task `./gradlew assembleDevRelease`, APKs
+collected from `app/build/outputs/apk/dev/release/`. Those values describe
+newer master code, not 1.8.2 — do not copy them blindly. Our pristine
+workflow uses JDK 17 because our own skeleton CI (run #2, Success) proved
+JDK 17 works with the same AGP 8.5.1 / Gradle 8.7.
 
 ## 3. Verified launch API
 
@@ -164,27 +175,82 @@ public static void startApp(Context context, String name, String path,
 
 ## 4. Integration plan (v0.1.0)
 
-1. Checkout the submodule at tag 1.8.2:
-   `git submodule update --init && git -C vendor/j2me-loader checkout 1.8.2`.
-2. Build the **pristine** upstream engine first (no modifications) on CI
-   to lock JDK/AGP/NDK/SDK. Only after that build passes, change
+1. Build the **pristine** upstream engine first (no modifications) on CI
+   via `.github/workflows/engine-pristine.yml` (see §6) to lock
+   JDK/AGP/NDK/SDK. Only after that build passes, change
    `applicationId`/`namespace` to `com.khahdihdz.j2meemulator` and add the
    launcher UI.
-3. Keep the engine's `app` module as the main module; keep package
+2. Keep the engine's `app` module as the main module; keep package
    `ru.playsoftware.j2meloader` for engine Java code if renaming proves
    risky (least-risk option for v0.1.0), changing only `applicationId`,
    `namespace`, and the `FileProvider`/`DocumentProvider` authorities
    (`${applicationId}.provider` / `${applicationId}.documentProvider`).
    Record the decision in the README when it is made.
-4. Launcher (this repo's code) calls the engine only through
+3. Launcher (this repo's code) calls the engine only through
    `InstallerDialog`/`AppListModel` for install and `Config.startApp()`
    for launch. It must create a default per-game config before first
    launch so auto-run after import is not blocked by `ConfigActivity`.
-5. **Do NOT split the engine into a `:engine` library module in v0.1.0.**
+4. **Do NOT split the engine into a `:engine` library module in v0.1.0.**
    The engine is coupled to shared `R`, `BuildConfig.FULL_EMULATOR`,
    static `ContextHolder`, static `Config` dirs, Room DB, launcher
    resources/layouts, and native `.so` for 4 ABIs. Splitting it is a
    large, high-risk refactor with no benefit for v0.1.0.
+
+## 6. Integration via Actions only (no local clone)
+
+Chosen by VXNQR on 2026-11-27: engine integration happens only through
+GitHub submodule declarations and GitHub Actions checkouts. No local
+clone of J2ME Loader is read, run, copied, or built in this workspace.
+
+- `.gitmodules` declares submodule `vendor/j2me-loader`
+  (url `https://github.com/nikita36078/J2ME-Loader.git`, pin tag
+  `1.8.2`), but the submodule **gitlink was never committed** — a
+  gitlink cannot be created through the GitHub API or web UI, and
+  `submodules: recursive` on our own checkout would therefore fetch
+  nothing. `.gitmodules` is currently a declaration only, not a working
+  submodule.
+- `.github/workflows/engine-pristine.yml` works around that by checking
+  out the upstream repo directly into `vendor/j2me-loader` with
+  `actions/checkout@v4` (`repository: nikita36078/J2ME-Loader`,
+  `ref: "1.8.2"`, `path: vendor/j2me-loader`). Trigger:
+  `workflow_dispatch` + push touching that workflow file only, so it
+  does not run on every ordinary push.
+- Pristine build task: `./gradlew assembleFdroidDebug` in
+  `vendor/j2me-loader`. Flavour `fdroid` and build type `debug` are both
+  verified in upstream `app/build.gradle` at 1.8.2; `fdroid` is a full
+  emulator flavour (`FULL_EMULATOR=true`) with no Play signing needs.
+  The `midlet` flavour is NOT usable for a pristine build (it needs a
+  MIDlet manifest). Upstream master builds `assembleDevRelease`, but
+  that is a release build needing `keystore.properties` from secrets.
+- NDK: upstream sets `ndkVersion 22.1.7171670` and builds native M3G via
+  `ndkBuild` (`src/main/cpp/Android.mk`), so that exact NDK is required.
+  The workflow installs it with
+  `$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install
+  "ndk;22.1.7171670"` (syntax verified from Android sdkmanager docs /
+  actions/runner-images guidance). NOT verified whether Google still
+  serves NDK r22b through sdkmanager in 2026 — if the step fails with
+  "package not found", that is the result to record.
+- `tools/check-engine-pristine.py` (read-only, stdlib only) runs in the
+  workflow before the build: it checks the required engine files/dirs
+  exist in `vendor/j2me-loader` and prints the toolchain values and
+  `Constants` values read from the engine's own files. Exit 1 on any
+  missing required path.
+- KNOWN RISK, unverified — `keystore.properties`: upstream
+  `app/build.gradle` `signingConfigs.release` eagerly loads
+  `keystore.properties` via `FileInputStream` unless `BITRISE_IO` is
+  set (upstream master CI creates the file from secrets before
+  building). A debug build may still fail at Gradle configuration with
+  `FileNotFoundException` for that file. The pristine workflow
+  deliberately does NOT create a dummy file, so the run will confirm
+  or refute this. If it fails that way, the fix is a dummy
+  `keystore.properties` step before the build.
+- After the pristine build passes, the next step is a merge script
+  (**not written yet**) that folds the engine source into this repo's
+  `app` module (keeping `dexlib`, native code, assets and manifests),
+  changes `applicationId`/`namespace`, and wires the launcher. That
+  script must run on GitHub Actions as well (or be delivered as
+  file-by-file uploads), because the local workspace must not process
+  a local engine clone.
 
 ## 5. Risks / open items
 
