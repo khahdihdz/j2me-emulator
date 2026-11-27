@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Phase 3 — Home screen (ours). Light theme, blue primary, white cards.
-     The game list is read-only here: full management (import, search,
-     sort, rename, delete, reinstall, shortcut) lives in the engine's
-     MainActivity, opened with "Thư viện & Nhập game". -->
+     The game list is read-only here: rename, reinstall and home-screen
+     shortcut live in the engine's MainActivity, opened with
+     "Thư viện & Nhập game". Phase 5 added search and sort to this
+     screen, and delete to our GameDetailsActivity. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -91,6 +92,33 @@
         android:layout_marginTop="8dp"
         android:text="@string/import_pick_file" />
 
+    <!-- Phase 5 — search and sort on Home. The search box filters the
+         list below by title or author (same match rule as the engine
+         list); the sort button writes the same PREF_APP_SORT the engine
+         list uses, so both lists sort the same way. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <androidx.appcompat.widget.SearchView
+            android:id="@+id/home_search"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:iconifiedByDefault="false"
+            android:queryHint="@string/home_search_hint" />
+
+        <Button
+            android:id="@+id/home_sort"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/home_sort" />
+
+    </LinearLayout>
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -119,6 +147,7 @@
         android:visibility="gone">
 
         <TextView
+            android:id="@+id/home_empty_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/home_no_games"
