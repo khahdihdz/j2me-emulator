@@ -66,6 +66,22 @@
                     android:textColor="@color/textSecondary"
                     android:textSize="12sp" />
 
+                <TextView
+                    android:id="@+id/details_folder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/details_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/textSecondary"
+                    android:textSize="12sp" />
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -82,6 +98,16 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="@string/details_settings" />
+
+        <!-- Phase 5 — delete. Removes the library entry, the converted
+             game directory, its saved data and its settings; the
+             original .jar/.jad file is kept (see GameDetailsActivity). -->
+        <Button
+            android:id="@+id/details_delete"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/details_delete" />
 
     </LinearLayout>
 </ScrollView>
