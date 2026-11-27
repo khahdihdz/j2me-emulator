@@ -324,6 +324,28 @@ def merged_build_gradle(engine_text):
         " ?: \"0.1.0\"\n",
         'versionName from env (was "1.8.2")')
     replace_once(
+        "        minSdk MIN_SDK\n",
+        "        // minSdk 19 (was MIN_SDK = 14): the engine calls\n"
+        "        // BluetoothDevice.fetchUuidsWithSdp (API 15) and\n"
+        "        // android.util.ArrayMap (API 19); lint NewApi flagged\n"
+        "        // all four call sites at minSdk 14 (CI run #12, 27\n"
+        "        // lint errors). Upstream's README says Android 5.0+\n"
+        "        // (API 21), so 19 stays below what upstream claims\n"
+        "        // to support.\n"
+        "        minSdk 19\n",
+        "minSdk 14 -> 19 (NewApi fix)")
+    replace_once(
+        "        disable 'MissingTranslation', 'ExtraTranslation'\n",
+        "        // 'MissingPermission' added: lint flags two legacy\n"
+        "        // J2ME Bluetooth/location calls in engine code\n"
+        "        // (LocalDevice.getAddress, LocationProviderImpl.\n"
+        "        // removeUpdates). Upstream never ran lint on tag\n"
+        "        // 1.8.2; this is a lint-only suppression — runtime\n"
+        "        // behaviour is unchanged from the pristine build.\n"
+        "        disable 'MissingTranslation', 'ExtraTranslation',\n"
+        "                'MissingPermission'\n",
+        "lint: disable MissingPermission")
+    replace_once(
         "    signingConfigs {",
         "    compileOptions {\n"
         "        // Java 1.8 matches the effective default the pristine\n"
@@ -412,6 +434,61 @@ def write_settings(root):
     (root / "settings.gradle").write_text(text, encoding="utf-8")
 
 
+def apply_lint_fixes(root):
+    """Fix the lint errors that are real, minimal bugs in engine code.
+
+    Verified against the full lint report of CI run #12 (27 errors,
+    168 warnings; only the 27 errors block the build):
+    * StringFormatMatches (19): MainActivity.alertCreateDir() passes
+      TWO args to alert_msg_workdir_not_exists, whose text has ONE
+      %1$s placeholder (the second arg, lblChange, is the dialog's
+      neutral-button label, used separately at the next line).
+      Passing the extra arg is harmless at runtime (String.format
+      ignores extras) but lint flags the call site and every locale's
+      definition of the string. Fix: pass only emulatorDir.
+    * UseAppTint (2): listitem_checkable.xml and listitem_dir.xml use
+      android:tint on an ImageView that already uses app:srcCompat;
+      both layouts already declare xmlns:app. Fix: app:tint.
+    The other two error groups are handled in merged_build_gradle:
+    NewApi (4) by minSdk 19, MissingPermission (2) by a lint-only
+    disable. Each replacement asserts exactly one occurrence; a
+    missing match fails the merge instead of silently shipping the
+    un-fixed file.
+    """
+    print("== Step 8: apply lint fixes to merged engine code ==")
+    main_activity = (root / "app/src/main/java/ru/playsoftware"
+                     / "j2meloader/MainActivity.java")
+    text = main_activity.read_text(encoding="utf-8")
+    old = ("getString(R.string.alert_msg_workdir_not_exists, "
+           "emulatorDir, lblChange)")
+    new = "getString(R.string.alert_msg_workdir_not_exists, emulatorDir)"
+    if text.count(old) == 0 and text.count(new) == 1:
+        print("  --   MainActivity format call already fixed, skipped")
+    elif text.count(old) != 1:
+        return fail(f"MainActivity format-call fix: expected 1 "
+                    f"occurrence, found {text.count(old)}")
+    else:
+        main_activity.write_text(text.replace(old, new), encoding="utf-8")
+        print("  OK   MainActivity: format call now passes 1 arg")
+    for name in ("listitem_checkable.xml", "listitem_dir.xml"):
+        path = root / "app/src/main/res/layout" / name
+        text = path.read_text(encoding="utf-8")
+        if 'xmlns:app="http://schemas.android.com/apk/res-auto"' \
+                not in text:
+            return fail(f"{name}: xmlns:app missing, cannot use app:tint")
+        old = 'android:tint="?attr/nnf_dir_icon_color"'
+        new = 'app:tint="?attr/nnf_dir_icon_color"'
+        if text.count(old) == 0 and text.count(new) == 1:
+            print(f"  --   {name} already uses app:tint, skipped")
+            continue
+        if text.count(old) != 1:
+            return fail(f"{name}: expected 1 android:tint, "
+                        f"found {text.count(old)}")
+        path.write_text(text.replace(old, new), encoding="utf-8")
+        print(f"  OK   {name}: android:tint -> app:tint")
+    return 0
+
+
 def final_checks(root):
     print("== Step 7: final checks ==")
     app_main = root / "app/src/main"
@@ -434,11 +511,25 @@ def final_checks(root):
             ("namespace 'ru.playsoftware.j2meloader'", "namespace"),
             ("APP_VERSION_CODE", "versionCode from env"),
             ("APP_VERSION_NAME", "versionName from env"),
-            ("id 'org.jetbrains.kotlin.android'", "kotlin plugin")):
+            ("id 'org.jetbrains.kotlin.android'", "kotlin plugin"),
+            ("minSdk 19", "minSdk 19 (NewApi fix)"),
+            ("'MissingPermission'", "lint MissingPermission disable")):
         if needle not in gradle:
             return fail(f"merged app/build.gradle missing {what}")
     print("  OK   merged app/build.gradle (applicationId, namespace, "
-          "env versions, kotlin plugin)")
+          "env versions, kotlin plugin, minSdk 19, lint disable)")
+    main_activity = (root / "app/src/main/java/ru/playsoftware"
+                     / "j2meloader/MainActivity.java").read_text(
+                         encoding="utf-8")
+    if "alert_msg_workdir_not_exists, emulatorDir, lblChange" \
+            in main_activity:
+        return fail("MainActivity still passes 2 args to "
+                    "alert_msg_workdir_not_exists (StringFormatMatches)")
+    for name in ("listitem_checkable.xml", "listitem_dir.xml"):
+        if "android:tint" in (root / "app/src/main/res/layout"
+                              / name).read_text(encoding="utf-8"):
+            return fail(f"{name} still uses android:tint (UseAppTint)")
+    print("  OK   lint fixes applied (format call, app:tint)")
     if ":dexlib" not in (root / "settings.gradle").read_text(
             encoding="utf-8"):
         return fail("settings.gradle does not include ':dexlib'")
@@ -522,6 +613,9 @@ def main(argv):
           "launcher filters)")
     write_settings(root)
     print("  OK   settings.gradle generated (include ':app', ':dexlib')")
+    rc = apply_lint_fixes(root)
+    if rc:
+        return rc
     return final_checks(root)
 
 
