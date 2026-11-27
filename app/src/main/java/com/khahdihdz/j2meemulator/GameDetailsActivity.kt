@@ -17,6 +17,7 @@ import ru.playsoftware.j2meloader.R
 import ru.playsoftware.j2meloader.applist.AppItem
 import ru.playsoftware.j2meloader.applist.AppListModel
 import ru.playsoftware.j2meloader.config.Config
+import ru.playsoftware.j2meloader.config.ProfilesManager
 import ru.playsoftware.j2meloader.util.AppUtils
 
 /**
@@ -49,6 +50,25 @@ import ru.playsoftware.j2meloader.util.AppUtils
  * Rename / reinstall are NOT here: they live in the engine
  * MainActivity's context menu (Phase 5 owns library management, but
  * those two actions already exist there and are not duplicated).
+ *
+ * Phase 6 — controls. The engine already owns orientation and the
+ * virtual keyboard inside the game (MicroActivity + VirtualKeyboard
+ * at 1.8.2), so nothing here re-implements them. This screen only
+ * SHOWS the game's current per-game settings, read from its own
+ * config file with `ProfilesManager.loadConfig`, and editing stays
+ * in the engine ConfigActivity ("Cài đặt game" button):
+ * - Orientation: `ProfileModel.orientation`, 0 Default / 1 Auto /
+ *   2 Portrait / 3 Landscape (MicroActivity private constants at
+ *   1.8.2; the labels come from the engine array
+ *   `R.array.PREF_ORIENTATION_ENTRIES`).
+ * - Virtual keyboard: `ProfileModel.showKeyboard` (default true for
+ *   a new profile) and the layout variant `ProfileModel.vkType`
+ *   (0 Custom / 1 Phone / 2 Phone+arrows / 3 Numbers+arrows /
+ *   4 Arrows+numbers / 5 Numbers / 6 Arrows; labels from the engine
+ *   array `R.array.PREF_VK_TYPE_ENTRIES`).
+ * `loadConfig` returns null when the game has no config file yet
+ * (no config.json and no legacy config.xml), so a null result is
+ * shown as "chưa cấu hình" instead of inventing a value.
  */
 class GameDetailsActivity : AppCompatActivity() {
 
@@ -112,6 +132,7 @@ class GameDetailsActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.details_folder).text =
             getString(R.string.details_folder, path)
         showSize(File(pathExt))
+        showControls(path)
 
         findViewById<Button>(R.id.details_run).setOnClickListener {
             Config.startApp(this, title, pathExt, false)
@@ -147,6 +168,62 @@ class GameDetailsActivity : AppCompatActivity() {
             if (file.isFile) total += file.length()
         }
         return total
+    }
+
+    /**
+     * Phase 6 — show the game's per-game orientation and virtual
+     * keyboard settings. Reads the game's own config file on a
+     * background thread (file IO plus Gson parsing) and posts plain
+     * strings to the UI. The config directory is
+     * `Config.getConfigsDir() + folder name` (the same directory
+     * MicroLoader reads at 1.8.2); `loadConfig` is @Nullable and
+     * returns null when the game has no config file yet, which is
+     * shown as "chưa cấu hình". The orientation and keyboard-layout
+     * labels are the engine's own arrays, so they stay in sync with
+     * the values ConfigActivity writes. Out-of-range values (a
+     * hand-edited config) fall back to the "unknown" strings instead
+     * of crashing on an array index.
+     */
+    private fun showControls(folderName: String) {
+        Thread {
+            val orientationText: String
+            val keyboardText: String
+            try {
+                val params = ProfilesManager.loadConfig(File(Config.getConfigsDir(), folderName))
+                if (params == null) {
+                    orientationText = getString(R.string.details_orientation_unknown)
+                    keyboardText = getString(R.string.details_keyboard_unknown)
+                } else {
+                    val orientationEntries = resources.getStringArray(R.array.PREF_ORIENTATION_ENTRIES)
+                    val orientationLabel = orientationEntries.getOrNull(params.orientation)
+                    orientationText = if (orientationLabel != null) {
+                        getString(R.string.details_orientation, orientationLabel)
+                    } else {
+                        getString(R.string.details_orientation_unknown)
+                    }
+                    keyboardText = if (params.showKeyboard) {
+                        val layoutEntries = resources.getStringArray(R.array.PREF_VK_TYPE_ENTRIES)
+                        val layoutLabel = layoutEntries.getOrNull(params.vkType)
+                        if (layoutLabel != null) {
+                            getString(R.string.details_keyboard,
+                                getString(R.string.details_keyboard_on, layoutLabel))
+                        } else {
+                            getString(R.string.details_keyboard_unknown)
+                        }
+                    } else {
+                        getString(R.string.details_keyboard,
+                            getString(R.string.details_keyboard_off))
+                    }
+                }
+            } catch (e: Exception) {
+                orientationText = getString(R.string.details_orientation_unknown)
+                keyboardText = getString(R.string.details_keyboard_unknown)
+            }
+            runOnUiThread {
+                findViewById<TextView>(R.id.details_orientation).text = orientationText
+                findViewById<TextView>(R.id.details_keyboard).text = keyboardText
+            }
+        }.start()
     }
 
     private fun formatSize(bytes: Long): String {
