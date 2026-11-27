@@ -66,6 +66,19 @@ jobs:
         run: ./gradlew testFdroidDebugUnitTest --stacktrace
       - name: Run lint
         run: ./gradlew lintFdroidDebug --stacktrace
+      - name: Upload lint report
+        # Lint prints only the first failure to the console; the full
+        # list of errors lives in the report files on the runner. Keep
+        # them as an artifact even when lint fails (run #11: 27 errors,
+        # 168 warnings, only the first one visible in the log).
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report-fdroid-debug
+          path: |
+            app/build/reports/lint-results-fdroidDebug.html
+            app/build/intermediates/lint_intermediate_text_report/fdroidDebug/lintReport-fdroidDebug/lint-results-fdroidDebug.txt
+          if-no-files-found: warn
       - name: Build debug APK
         run: ./gradlew assembleFdroidDebug --stacktrace
       - name: Upload debug APK
