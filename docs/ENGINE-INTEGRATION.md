@@ -387,7 +387,26 @@ The real build is proven only by the CI run after this merge lands.
   `testFdroidDebugUnitTest`; their status at 1.8.2 was never checked.
 - `lintFdroidDebug` may surface new lint findings from engine code;
   the engine's own lint block only disables `MissingTranslation` and
-  `ExtraTranslation`.
+  `ExtraTranslation`. **Confirmed in CI run #12** (2026-11-27,
+  https://github.com/khahdihdz/j2me-emulator/actions/runs/45984349361):
+  27 errors, 168 warnings, after merge and unit tests passed. All 27
+  errors are pre-existing upstream code (upstream tag 1.8.2 has no CI
+  and never ran lint): MissingPermission 2 (LocalDevice.java:161
+  getAddress, LocationProviderImpl.java:155 removeUpdates), NewApi 4
+  (DiscoveryAgent.java:237/297 fetchUuidsWithSdp API 15,
+  XmlUtils.java:609/615 ArrayMap API 19, minSdk was 14),
+  UseAppTint 2 (listitem_checkable.xml:23, listitem_dir.xml:23),
+  StringFormatMatches 19 (MainActivity.java:163 passes 2 args to
+  alert_msg_workdir_not_exists which has 1 %1$s placeholder, plus
+  every locale's definition of that string and err_missing_app).
+  Fixes in tools/merge-engine.py (Step 8, each asserted): pass 1 arg
+  at the MainActivity call site, android:tint -> app:tint in both
+  layouts (xmlns:app already declared), minSdk 14 -> 19 in the merged
+  build.gradle (upstream README says Android 5.0+), and a lint-only
+  'MissingPermission' disable. No error was in our launcher code.
+  The lint-report artifact of run #12 contained only the HTML report;
+  the .txt path in ci.yml was corrected to
+  app/build/reports/lint-results-fdroidDebug.txt.
 - The `dev` flavour's `generateVersionCode()` runs `git rev-list`;
   the CI build uses the `fdroid` flavour, so this is not on the
   critical path.
