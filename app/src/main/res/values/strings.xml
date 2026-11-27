@@ -52,6 +52,12 @@
     <string name="details_folder">Thư mục: %1$s</string>
     <string name="details_size">Kích thước: %1$s</string>
     <string name="details_size_unknown">Kích thước: không xác định</string>
+    <string name="details_orientation">Hướng màn hình: %1$s</string>
+    <string name="details_orientation_unknown">Hướng màn hình: chưa cấu hình</string>
+    <string name="details_keyboard">Bàn phím ảo: %1$s</string>
+    <string name="details_keyboard_unknown">Bàn phím ảo: chưa cấu hình</string>
+    <string name="details_keyboard_on">Bật — %1$s</string>
+    <string name="details_keyboard_off">Tắt</string>
     <string name="details_delete">Xóa game</string>
     <string name="details_delete_title">Xóa game này?</string>
     <string name="details_delete_message">Xóa “%1$s” khỏi thư viện? Dữ liệu đã lưu và cài đặt của game sẽ bị xóa cùng. File .jar/.jad gốc sẽ được giữ nguyên.</string>
