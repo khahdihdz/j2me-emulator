@@ -439,3 +439,155 @@ The real build is proven only by the CI run after this merge lands.
 - The merged manifest is rewritten by `xml.etree.ElementTree`, so
   formatting and comments from the engine manifest are lost; only
   structure and values are preserved (verified by the final checks).
+
+## 10. Phase 3 — Launcher: Home, Details, About (written 2026-11-27)
+
+### Decision: option (a) extended — engine list stays the Library
+
+The engine `MainActivity` + `AppsListFragment` already IS a complete
+library screen (verified at tag 1.8.2): search (300 ms debounce),
+sort by `PREF_APP_SORT`, FAB import via the engine file picker, context
+menu (shortcut, rename, per-game settings, reinstall, delete), tap to
+run. Rebuilding it would duplicate ~700 lines of verified engine
+behaviour. Option (b) — our own LibraryActivity reading the Room DB —
+was rejected for two concrete reasons, both verified in source:
+
+1. **Two Room instances go stale.** `AppRepository` is only reachable
+   through `AppListModel` (`ViewModelProvider(activity).get(...)`,
+   verified in engine `MainActivity` and `AppsListFragment`), and each
+   `AppListModel` builds its own `AppRepository` + Room instance.
+   Room does not propagate writes between two instances in the same
+   process (the engine does not enable multi-instance invalidation),
+   so a list owned by our activity would go stale after the engine
+   MainActivity installs a game. Our Home reads through the same
+   repository pattern but re-queries on resume (see below).
+2. **First-run work-dir setup lives in the engine MainActivity**
+   (`checkAndCreateDirs` / `alertCreateDir` / permission flow, verified
+   in `MainActivity.java`). Duplicating it risks a first run that
+   never creates the work directory.
+
+### Screens (prompt mapping)
+
+- **Splash + Home — our `MainActivity`** (was the Phase 2 forwarder).
+  Light `Theme.J2MEEmulator`, white cards, blue primary. Header card:
+  app name, subtitle, work directory (`Config.getEmulatorDir()`).
+  Game list (read-only): icon via `AppUtils.getIconBitmap(item)`
+  (verified public static, null when no icon), title, author •
+  version. Tap -> `Config.startApp(title, pathExt, false)`.
+  Long-press -> our `GameDetailsActivity`. Buttons: "Thư viện &
+  Nhập game" -> engine `MainActivity`; "Cài đặt" -> engine
+  `SettingsActivity`; "Giới thiệu" -> our `AboutActivity`.
+  Game-file intents (ACTION_VIEW / ACTION_SEND with a Uri, not from
+  history) are still forwarded immediately to the engine MainActivity
+  — the import flow is unchanged from Phase 2.
+- **Library / Import — engine `MainActivity`.** Import, search, sort,
+  rename, delete, reinstall, shortcut all live there (see §10
+  decision). No code of ours duplicates them in v0.1.0.
+- **Details — our `GameDetailsActivity`.** Values arrive as plain
+  string extras (title, author, version, pathExt). Icon decoded with
+  `BitmapFactory` from `pathExt + Config.MIDLET_ICON_FILE`
+  (`"/icon.png"`, verified constant). "Chạy" ->
+  `Config.startApp(..., false)`; "Cài đặt game" ->
+  `Config.startApp(..., true)` (verified: always opens the per-game
+  `ConfigActivity`). Rename/delete stay in the engine list.
+- **Settings — engine `SettingsActivity`.** Global settings are the
+  engine's own `res/xml/preferences.xml` (verified): `pref_theme`,
+  `pref_black_background`, `pref_actionbar_switch`,
+  `pref_statusbar_switch`, `pref_wakelock_switch`,
+  `pref_screenshot_switch`, `pref_vibration_switch` (default true),
+  `emulator_dir`, `pref_default_settings` (profiles), experimental
+  `micro3d_using_message`. No setting was invented by us. Per-game
+  settings = engine `ConfigActivity` (see Details).
+- **About — our `AboutActivity`.** App name, version from
+  `ru.playsoftware.j2meloader.BuildConfig.VERSION_NAME` (verified
+  pattern from engine `AboutDialogFragment`), engine credit "J2ME
+  Loader 1.8.2 (Apache License 2.0)", repo links, short how-to in
+  Vietnamese, "Mở thư viện" button.
+
+### Verified engine API used by our code (tag 1.8.2)
+
+- `Config.startApp(context, name, path, showSettings)` and the 5-arg
+  overload with `arguments`; `Config.getEmulatorDir()`,
+  `Config.getAppDir()`; constants `MIDLET_ICON_FILE="/icon.png"`,
+  `MIDLET_RES_FILE="/res.jar"`, `MIDLET_CONFIG_FILE="/config.json"`.
+  `startApp` opens `ConfigActivity` when `showSettings` is true or no
+  per-game config file exists, else `MicroActivity` directly.
+- `AppListModel extends AndroidViewModel`, `getAppRepository()`;
+  `AppRepository.observeApps(LifecycleOwner, Observer<List<AppItem>>)`,
+  `getAll()` -> `Flowable<List<AppItem>>`, `get(int id)`,
+  `insert/update/delete`, `onWorkDirReady()`, `getSort()`.
+  `AppDatabase` (Room, entity `AppItem`, version 1, file
+  `<emulatorDir>/J2ME-apps.db`, table `apps`, unique index on `path`);
+  `AppItemDao` (`getAll`, `get(name, vendor)`, `get(id)`, …).
+- `AppItem`: `getId/getTitle/getAuthor/getVersion/getPath`,
+  `getPathExt()` = `Config.getAppDir() + path`,
+  `getImagePathExt()` = `Config.getAppDir() + imagePath`.
+- `AppUtils.getIconBitmap(AppItem)` (public static, may return null),
+  `AppUtils.deleteApp(AppItem)` (NOT used by our code in Phase 3).
+- `ru.playsoftware.j2meloader.settings.SettingsActivity`,
+  `ru.playsoftware.j2meloader.MainActivity`,
+  `ru.playsoftware.j2meloader.info.AboutDialogFragment` (reference for
+  the About content; our About is a separate activity).
+
+### Staleness + first-run handling in our Home (read the code comments)
+
+- `onResume` re-queries `appRepository.getAll().firstElement()` on
+  `Schedulers.io()` / `AndroidSchedulers.mainThread()` whenever the
+  work directory is ready, to catch writes made through the engine
+  MainActivity's own repository instance.
+- `AppRepository` only opens its database when the emulator dir is an
+  existing writable directory (verified in its constructor). If it is
+  not ready at `onCreate`, our repository stays database-less, so the
+  list stays empty and the user is sent to the engine MainActivity
+  (which runs the real first-run flow). If the dir becomes ready while
+  Home is paused, `onResume` restarts Home so a fresh `AppListModel`
+  builds a repository with a database.
+- Our code uses `import ru.playsoftware.j2meloader.R` explicitly:
+  the merged namespace stays `ru.playsoftware.j2meloader`, so there is
+  no `com.khahdihdz.j2meemulator.R`. Same for `BuildConfig`.
+
+### Merge-script changes for Phase 3
+
+- `merged_manifest`: the Home (ex-forwarder) activity theme changed
+  from `@android:style/Theme.NoDisplay` to
+  `@style/Theme.J2MEEmulator`. Two new activities are declared:
+  `GameDetailsActivity` and `AboutActivity` (exported=false, no intent
+  filters, same theme). `Theme.J2MEEmulator` comes from the skeleton's
+  `res/values/themes.xml`, which survives the merge because the engine
+  has no `res/values/themes.xml` (verified at tag 1.8.2).
+- New layout names (`activity_home`, `item_game`,
+  `activity_game_details`, `activity_about`) and all new string names
+  (`home_*`, `details_*`, `about_*`) were checked against the engine
+  tree at tag 1.8.2: none exist there, so the merge cannot silently
+  overwrite them.
+- `final_checks` now also asserts the Home theme and the two new
+  activity declarations.
+
+### Not done in Phase 3 (honest gaps)
+
+- No search/sort on our Home list; use the engine Library for that.
+- No rename/delete/reinstall/shortcut in our Details screen; engine
+  list context menu owns them (Phase 5: library management).
+- No per-game settings UI of our own; engine `ConfigActivity` owns it.
+- No launcher icon yet (same as skeleton); the engine's
+  `R.mipmap.ic_launcher` is still used as the app icon.
+- The engine Library keeps the engine's own (dark) theme in v0.1.0;
+  only our screens use the light blue/white theme.
+- Not verified on CI yet: this is static-checked only (see below).
+
+### Checks run (static only — no JDK/Gradle/Android SDK locally)
+
+- `python3 -m py_compile tools/merge-engine.py` OK.
+- `merged_manifest()` exercised on a synthetic manifest with the exact
+  engine structure: Home gets the 4 intent filters + light theme,
+  engine MainActivity stripped of filters, Details/About declared
+  exported=false; idempotent re-run of `apply_lint_fixes()` still OK.
+- All 7 XML files parse with `xml.etree.ElementTree`; every `R.id`,
+  `R.string`, `R.layout` referenced in Kotlin exists in our res;
+  every engine API name used in Kotlin is in the verified list above;
+  no TODO markers, no calls to unverified engine APIs
+  (`InstallerDialog`, `AppDatabase.open`, `deleteApp` appear only in
+  KDoc comments, never in code). Brace/paren balance OK.
+- **Not built, not run.** The real proof is the next CI run on
+  `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
+  `lintFdroidDebug` -> `assembleFdroidDebug`).
