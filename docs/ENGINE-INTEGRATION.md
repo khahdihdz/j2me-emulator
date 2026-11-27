@@ -993,3 +993,167 @@ control was rewritten:
 - **Not built, not run.** The real proof is the next CI run on
   `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
   `lintFdroidDebug` -> `assembleFdroidDebug`).
+
+## 14. Phase 7 — Tests (written 2026-11-28)
+
+The prompt requires unit/integration tests for: import JAR/JAD,
+JAD→JAR, missing manifest/MIDlet, corrupt file, duplicates,
+`content://`, ACTION_VIEW/SEND, MIDlet launch, orientation, config
+save/restore, library — and forbids skipping a failing test to get
+an APK. What Phase 7 actually does, honestly: real JVM unit tests
+for everything that can run on the JVM, a manual checklist for
+everything that needs a device, and no fake tests.
+
+### What runs on CI already
+
+`testFdroidDebugUnitTest` already ran in CI before Phase 7 — with
+zero tests in it, so it passed trivially. Upstream has no JVM unit
+tests at all (no `app/src/test` at tag 1.8.2; only instrumented
+tests under `app/src/androidTest/java/javax/microedition/`, which
+the merge copies but CI never runs — they need a device/emulator,
+and there is none on the runner). The only test dependency the
+merged build has is the engine's own
+`testImplementation 'junit:junit:4.13.2'`. No Robolectric, no
+Mockito, no Truth — and none is added here: a new test framework
+would be an unverified dependency version plus more Maven downloads
+on a runner that already hit Maven Central HTTP 429 twice (runs
+#19, #48). `ci.yml` now also uploads the JUnit XML/HTML results
+as artifact `unit-test-results-fdroid-debug` (`if: always()`),
+like the lint report, so a failure is inspectable without
+re-running CI.
+
+### Refactor first: pure rules, thin activities
+
+The logic under test used to live inside `MainActivity` /
+`GameDetailsActivity`, where it touches `Intent`, `Uri`,
+resources and views and cannot run on the JVM. Phase 7 moves it
+unchanged into `GameRules.kt` (`com.khahdihdz.j2meemulator`,
+zero Android imports) and leaves the activities as thin adapters:
+
+- `GameUriRules.validate(scheme, path)` — the lenient import
+  pre-check (accepted schemes `file`/`content`/`http`/`https`;
+  extension after the last dot, missing/empty accepted, unknown
+  rejected). `MainActivity.validateGameUri` only maps the result
+  to a string resource.
+- `GameUriRules.pickIntentUri(action, data, stream, streams,
+  fromHistory)` — which Uri an intent carries (VIEW → data,
+  SEND → `EXTRA_STREAM`, SEND_MULTIPLE → first item, history
+  ignored). The action values are the stable `Intent.ACTION_*`
+  strings spelled out, since the constants live in Android.
+  `MainActivity.gameUriFromIntent` only extracts the strings
+  from the `Intent` and parses the result back with `Uri.parse`
+  (a `toString()` → `parse()` round-trip).
+- `LibraryRules.matches(title, author, query)` — the engine's
+  own match rule (lowercased title or author contains the
+  lowercased query; empty query matches; no trimming).
+- `LibraryRules.toggleSort(current, picked)` — picking the
+  active sort variant flips its direction bit (`Int.MIN_VALUE`).
+- `FormatRules.formatSize` / `dirSize` / `orientationLabel` /
+  `vkLayoutLabel` — moved unchanged from `GameDetailsActivity`
+  (size formatting, recursive directory size, out-of-range label
+  → null instead of an array-index crash).
+
+### Tests written (all JVM unit tests, JUnit 4)
+
+| File (`app/src/test/java/com/khahdihdz/j2meemulator/`) | Tests | Covers (prompt cases) |
+|---|---|---|
+| `GameUriRulesTest.kt` | 25 | Import pre-check: accepted schemes/extensions incl. uppercase; bad scheme (`ftp`, missing, empty); bad extension (`.apk`, `.zip`); lenient cases (no extension, trailing dot, null path — engine decides); intent Uri extraction: VIEW/SEND/SEND_MULTIPLE/first-item/history/unknown/null action |
+| `LibraryRulesTest.kt` | 13 | Library search: empty query, title/author match, case-insensitivity incl. Vietnamese (`Cờ Tỷ Phú` / `TỶ PHÚ`), no trimming, no match; sort toggle: flip bit, select other variant, reset after a flipped value |
+| `FormatRulesTest.kt` | 14 | Size formatting (B/KB/MB/GB boundaries, `Locale.US` pinned in the test because `%.2f` uses the default locale); `dirSize` on real temp dirs (empty, nested sum, missing dir → -1, file → -1); orientation/VK label in-range vs out-of-range → null |
+| `DescriptorTest.kt` | 21 | Engine `ru.woesss.j2me.jar.Descriptor` (1.8.2): valid JAD and manifest parse, JAD from a real file, BOM strip, continuation lines, Jar-URL trim; missing MIDlet-Name/Vendor/Version, missing/non-integer Jar-Size, missing/empty Jar-URL, missing manifest Name; garbage and empty input; `compareVersion` ordering; `equals` on Name+Vendor (duplicate detection) |
+
+Total: **73 tests**. Every test asserts the real behaviour,
+including the failure paths (`expected = DescriptorException::class`).
+
+### Why `Descriptor` works on the JVM — and the one build change
+
+`Descriptor` is plain Java: its constructor only parses text.
+It touches Android in exactly one place — `android.util.Log.e`
+in the error path of `init()` — and unit-test Android stubs
+throw `RuntimeException("Stub!")` when called. The merge script
+therefore adds one block to the generated `app/build.gradle`
+(`merged_build_gradle`, asserted in `final_checks`):
+
+```groovy
+testOptions {
+    unitTests.returnDefaultValues = true
+}
+```
+
+This makes stub calls no-ops (Log.e returns 0) so the real
+`DescriptorException` propagates — which is exactly what the
+corrupt-input tests assert. It affects unit tests only; the app
+is unchanged. `getInfo(Context)` is deliberately NOT tested —
+it needs a real `Context` and Android resources.
+
+### Not covered by automated tests (honest gaps)
+
+- **No integration tests on a device.** `AppInstaller`
+  (JAR→DEX, Room insert, duplicate STATUS_* flow), `FileUtils.
+  getFileForUri` magic-byte sniffing, `Config.startApp` launching
+  a MIDlet, orientation actually rotating, config save/restore
+  round-trip through `ConfigActivity`, and the Room-backed
+  library all need Android. They are in the manual checklist
+  below, not in fake passing tests.
+- **No Robolectric / androidTest added.** See above (unverified
+  dependency, no emulator in CI).
+- **No release build in CI yet.** CI builds `assembleFdroidDebug`
+  only; the release build with signing is Phase 9/10 (apksign).
+  The prompt's "debug and release build" is therefore half done
+  until then.
+
+### Manual checklist (on-device, with the debug APK)
+
+1. Import a valid `.jar` from Files (ACTION_VIEW) → installs
+   and auto-runs.
+2. Import a valid `.jad` (local JAR next to it) → installs.
+3. Import a `.jad` whose JAR URL is remote → dialog warns
+   about downloading; nothing downloads before tapping Install.
+4. Import a `.jar` without `META-INF/MANIFEST.MF` → engine
+   error toast, no crash.
+5. Import a `.jad` missing `MIDlet-Name` → engine error toast.
+6. Import a corrupt `.jar` (random bytes) → engine error toast.
+7. Import the same game twice → reinstall/duplicate dialog
+   (equal / newer / older by version).
+8. Share a `.jar` from another app (ACTION_SEND) → installs.
+9. Import via Home "Nhập game từ file" (SAF) with a
+   `content://` Uri that has no extension → installs (magic
+   sniffing).
+10. Launch an installed game from Home and from Details → the
+    MIDlet actually starts.
+11. In Details, change orientation (Default/Auto/Portrait/
+    Landscape) in "Cài đặt game", relaunch → the game rotates
+    (or locks) as chosen; virtual keyboard shows with the
+    chosen layout, D-pad / 0–9 / soft keys work.
+12. In Details, delete a game → the converted folder and the
+    Room row go away, the original `.jar`/`.jad` file stays.
+13. Search and sort on Home match the engine Library.
+14. Config save/restore: change a per-game setting, kill the
+    app, reopen Details → the setting is still there.
+
+### Checks run (static only — no JDK/Gradle/Android SDK locally)
+
+- `merged_build_gradle()` run against the real upstream 1.8.2
+  `app/build.gradle` text (fetched via GitHub API): all previous
+  edits still apply, `testOptions` present, deterministic on
+  fresh input. `py_compile` on the merge script OK.
+- Every engine API name used in the tests is in the verified
+  list: `Descriptor` / `DescriptorException`
+  (`ru.woesss.j2me.jar`, constructors and getters verified in
+  the 1.8.2 source). No TODO markers, no `*/*` inside a block
+  comment (Phase 4 lesson), brace/paren/bracket balance OK in
+  all 4 main-source Kotlin files and all 4 test files.
+- Test expectations hand-checked against the engine source:
+  `Descriptor.parse` (BOM strip, continuation join),
+  `verifyJadAttrs` (Jar-Size integer, Jar-URL non-empty),
+  `verify` (Name/Vendor/Version), `compareVersion`
+  (missing part counts as 0), `equals` (Name+Vendor only).
+- One real bug caught while writing the tests: the first draft
+  of the `compareVersion` test double-negated the result of
+  `compareVersion("1.0.1")`; fixed to the correct expectation
+  (`-1`, "1.0" is older than "1.0.1") before any upload.
+- **Not built, not run.** The real proof is the next CI run on
+  `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest`
+  (73 tests) -> `lintFdroidDebug` -> `assembleFdroidDebug`).
+  If any test fails there, the phase is NOT done — no test is
+  skipped or deleted to get an APK.
