@@ -186,8 +186,8 @@ class GameDetailsActivity : AppCompatActivity() {
      */
     private fun showControls(folderName: String) {
         Thread {
-            val orientationText: String
-            val keyboardText: String
+            var orientationText: String
+            var keyboardText: String
             try {
                 val params = ProfilesManager.loadConfig(File(Config.getConfigsDir(), folderName))
                 if (params == null) {
