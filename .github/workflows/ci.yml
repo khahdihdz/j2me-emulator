@@ -25,8 +25,11 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # No setup-android step: ubuntu-latest already ships an Android SDK
+      # (ANDROID_HOME set). android-actions/setup-android@v3 failed in run #1
+      # because it tries to install the obsolete 'tools' package via sdkmanager.
+      - name: Check Android SDK
+        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/build-tools" && ls "$ANDROID_HOME/platforms"
       - name: Make gradlew executable
         run: chmod +x gradlew
       - name: Run unit tests
