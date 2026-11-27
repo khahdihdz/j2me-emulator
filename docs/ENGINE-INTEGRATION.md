@@ -591,3 +591,142 @@ was rejected for two concrete reasons, both verified in source:
 - **Not built, not run.** The real proof is the next CI run on
   `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
   `lintFdroidDebug` -> `assembleFdroidDebug`).
+
+## 11. Phase 4 — Intent import: JAR / JAD / KJX (written 2026-11-27)
+
+All engine behaviour below was verified by direct read of upstream
+tag 1.8.2 (`InstallerDialog.java`, `AppInstaller.java`,
+`Descriptor.java`, `AppsListFragment.java`, engine `MainActivity.java`,
+`FileUtils.java`, engine `AndroidManifest.xml`). The engine owns the
+whole install flow; Home only routes intents into it.
+
+### Import flow, by entry point
+
+| Entry | What happens (verified) |
+|---|---|
+| ACTION_VIEW file/content URI (.jar/.jad/.kjx) | System matches one of the 3 VIEW filters (MIME types `application/java`, `application/java-archive`, `application/x-java-archive`, `text/vnd.sun.j2me.app-descriptor`; or `*/*` + pathPattern `*.jar`/`*.jad`/`*.kjx`, case variants). Home validates (see below) and forwards the Uri to the engine MainActivity. Engine: cold start → `AppsListFragment.newInstance(uri)` → `onDbUpdated` shows `InstallerDialog` once the DB is ready; warm start → `onNewIntent` shows it directly. |
+| ACTION_VIEW http/https URI (.jad link) | VIEW filter 2 (JAD MIME type, http/https). `AppInstaller.loadInfo` downloads the JAD itself (`downloadJad`, 15 s connect / 3 min read, follows redirects) before parsing it. |
+| ACTION_SEND / SEND_MULTIPLE | **The engine has no SEND support at all** — no SEND filter in the manifest, and no code reads `EXTRA_STREAM`. Home extracts the Uri from `EXTRA_STREAM` (first item for SEND_MULTIPLE) and forwards it as a VIEW data Uri. The merged manifest adds one SEND filter on Home (mimeTypes java-archive/x-java-archive/java/j2me-descriptor). |
+| SAF file picker ("Nhập game từ file" on Home) | `ActivityResultContracts.OpenDocument` (`*/*` — providers report .jar/.jad with unreliable MIME types, so filtering happens in our validation + the engine). Home takes a persistable read permission (best effort), validates, forwards. The engine Library's own FAB picker (`FileUtils.getFilePicker`, SAF on scoped storage, legacy picker otherwise) also still exists. |
+
+### What the engine does with the file (AppInstaller.loadInfo)
+
+- `content://`: `FileUtils.getFileForUri` copies the stream to the
+  cache `installer/` dir and sniffs magic bytes: `PK` → `tmp.jar`,
+  `KJX` → `tmp.kjx`, anything else → `tmp.jad`. So a content:// Uri
+  with no file extension still works.
+- `file://`: used directly if the file exists.
+- `.jad`: parsed by `Descriptor` (UTF-8 BOM stripped, line
+  continuations joined). Requires `MIDlet-Name`, `MIDlet-Vendor`,
+  `MIDlet-Version`, plus `MIDlet-Jar-Size` (integer) and
+  `MIDlet-Jar-URL` (non-empty) — otherwise `DescriptorException`
+  ("Fail attribute ..."), shown by the dialog as a Toast error.
+  Local JAD + relative jar URL: if the JAD came from content:// on
+  scoped storage → `STATUS_NEED_JAD`, the dialog asks the user to
+  pick the JAR with the file picker; otherwise the JAR is looked up
+  next to the JAD (by URL name, else same basename + `.jar`) —
+  missing → `ConverterException("Jar-file not found for url: ...")`;
+  manifest != JAD → `STATUS_UNMATCHED`, the dialog asks "This app
+  differs from that described in JAD. Ignore JAD and install
+  anyway?".
+- `.jar`: manifest (`META-INF/MANIFEST.MF`) is required, else
+  `IOException("JAR not have META-INF/MANIFEST.MF")`; missing
+  `MIDlet-Name`/`Vendor`/`Version` → `DescriptorException`.
+- `.kjx`: `parseKjx` checks the `KJX` magic and extracts the
+  embedded JAD + JAR to cache.
+- Corrupt file (bad JAD, bad manifest, unreadable stream, empty
+  file): `DescriptorException` / `IOException` / `ConverterException`
+  → `InstallerDialog.onError` shows Toast `"Lỗi: <message>"` and
+  dismisses. The engine is the reporter for all of these; Home does
+  not duplicate it.
+- Unicode names: `Descriptor` strips the BOM; the app directory name
+  is the game name with illegal filename characters
+  (`[/\\:*?"<>|]`) removed, plus a `_1`/`_2` suffix if the directory
+  already exists (`generatePathName`).
+- Duplicates (by MIDlet name + vendor): `STATUS_NEW` (install),
+  `STATUS_EQUAL` (dialog "App already installed. Do you want to
+  reinstall it? All data will be saved." + a RUN button that runs
+  the installed copy without reinstalling), `STATUS_NEWEST` /
+  `STATUS_OLDEST` (update / replace-older dialogs with both
+  versions shown). Reinstall keeps the app id/title and moves the
+  RMS + per-game config directories when the path changes.
+- Install: JAR→DEX in-process (dexlib `Main`, `--no-optimize
+  --core-library`), res JAR copied, icon unzipped, manifest written,
+  `.tmp` dir renamed over the target dir, `AppItem` inserted in Room.
+
+### JAD pointing at a remote JAR — consent (prompt requirement)
+
+No JAR is ever downloaded without the user agreeing. When the JAD's
+`MIDlet-Jar-URL` is remote (absolute http(s), or relative resolved
+against a remote JAD), `srcJar` stays null and the dialog appends
+`warn_install_from_net` ("File will be downloaded from Internet") to
+the confirm message; the download (`downloadJar`, same timeouts as
+above) only runs inside `install()`, i.e. after the user taps
+Install. The only download that happens before any dialog is the JAD
+file itself when the user deliberately opens a remote .jad link — the
+JAD is metadata, and the tap on the link is the user's own action.
+
+### Auto-run after a successful import (prompt requirement)
+
+Upstream shows "Application successfully installed!" and turns the
+Install button into a START button — the game only runs on tap. The
+merge script (`apply_phase4_fixes`, Step 9) patches the merged
+`InstallerDialog` so `STATUS_SUCCESS` calls
+`Config.startApp(requireActivity(), title, pathExt, false)` and
+dismisses at once. Deliberate, documented behaviour change vs
+upstream; asserted in `final_checks` (patch marker must be present).
+
+### What Home adds (our code, MainActivity.kt)
+
+- Validation before forwarding, deliberately lenient: rejects only
+  an unsupported scheme (not file/content/http/https) or a file
+  extension that is present but not .jar/.jad/.kjx. A rejected intent
+  shows our own Vietnamese error dialog (`import_error_title` +
+  `import_error_bad_extension` / `import_error_bad_scheme`) and Home
+  stays open; nothing is forwarded.
+- `onNewIntent` handling. The merged manifest now gives Home the
+  engine MainActivity's `launchMode="singleTask"` and `configChanges`
+  (inherited in `merged_manifest`, asserted in `final_checks`), so a
+  second file intent while Home is running arrives via `onNewIntent`
+  instead of stacking a new Home instance. (Before Phase 4 the
+  forwarder had no launchMode at all — standard mode.)
+- URI-permission grant flags (`FLAG_GRANT_READ_URI_PERMISSION` and
+  friends) are copied from the source intent when forwarding, so the
+  engine can read a content:// Uri it did not receive directly.
+- History guard kept: a Uri restored from history
+  (`FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`) is not forwarded again,
+  same as the engine MainActivity.
+
+### Not done in Phase 4 (honest gaps)
+
+- No auto-run for the duplicate `STATUS_EQUAL` RUN path — that is a
+  user choice in the engine dialog (run the installed copy vs
+  reinstall), kept as-is.
+- No download progress UI of our own for a remote JAR; the engine
+  dialog shows its converting progress.
+- No handling of a JAD whose `MIDlet-Jar-URL` is a non-http(s)
+  scheme (e.g. `ftp:`): `downloadJar` forces an `http` scheme for a
+  scheme-less URL, and any other scheme fails in `install()` with
+  `ConverterException("Can't download jar")` → error Toast.
+- Not verified on CI yet: static-checked only (see below).
+
+### Checks run (static only — no JDK/Gradle/Android SDK locally)
+
+- `python3 -m py_compile tools/merge-engine.py` OK.
+- `merged_manifest()` exercised on the real engine 1.8.2 manifest:
+  Home gets launchMode singleTask + configChanges, 5 intent-filters
+  (MAIN + 3 VIEW + 1 SEND), engine MainActivity stripped of filters.
+- `apply_phase4_fixes()` exercised on the real 1.8.2
+  `InstallerDialog.java`: patch applies, second run skips
+  (idempotent), START-button block gone, `Config.startApp(
+  requireActivity(), ...)` present.
+- XML files parse (`xml.etree.ElementTree`); every `R.id`,
+  `R.string`, `R.layout` referenced in the changed Kotlin exists in
+  our res; every engine API name used in Kotlin is in the verified
+  list above (`Config.startApp`, `Config.getEmulatorDir`,
+  `AppListModel`, `AppRepository.observeApps`/`getAll`,
+  `AppUtils.getIconBitmap`, `SettingsActivity`); no TODO markers, no
+  calls to unverified engine APIs.
+- **Not built, not run.** The real proof is the next CI run on
+  `feat/launcher-engine` (merge -> `testFdroidDebugUnitTest` ->
+  `lintFdroidDebug` -> `assembleFdroidDebug`).
