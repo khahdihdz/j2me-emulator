@@ -162,7 +162,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun workDirText(): String {
         return try {
-            getString(R.string.home_work_dir, Config.emulatorDir)
+            getString(R.string.home_work_dir, Config.getEmulatorDir())
         } catch (e: Exception) {
             // Config's static init needs the engine Application to have
             // set ContextHolder; if that ever fails, Home must still open.
@@ -172,7 +172,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun isWorkDirReady(): Boolean {
         return try {
-            val dir = File(Config.emulatorDir)
+            val dir = File(Config.getEmulatorDir())
             dir.isDirectory && dir.canWrite()
         } catch (e: Exception) {
             false
