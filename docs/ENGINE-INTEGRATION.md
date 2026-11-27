@@ -420,6 +420,14 @@ The real build is proven only by the CI run after this merge lands.
   the button is still the dialog's neutral button). The other two
   %2$s uses in values-ru (reinstall_newest, reinstall_older) are
   untouched and verified to stay.
+- **CI run #17** (https://github.com/khahdihdz/j2me-emulator/actions/runs/45992970306,
+  commits 09bd55b lint fix, d22a082 docs): lint down to **1 error,
+  195 warnings**. The last one is values-pt/strings.xml:23
+  err_missing_app: "Verifique a% de disponibilidade" — the %s lost
+  its 's', so lint parses "% d" (percent, space, 'd' of "de") against
+  the base string's %s (values/strings.xml:37). The call site
+  (ConfigActivity) passes one String, storageName, so the fix in the
+  merge script is "a% de" -> "a%s de", matching base.
 - The `dev` flavour's `generateVersionCode()` runs `git rev-list`;
   the CI build uses the `fdroid` flavour, so this is not on the
   critical path.
