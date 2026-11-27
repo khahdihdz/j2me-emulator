@@ -25,12 +25,18 @@ docs/ENGINE-INTEGRATION.md; nothing here is guessed):
   one of those references. Only applicationId changes, to
   com.khahdihdz.j2meemulator. Providers use ${applicationId}, so their
   authorities follow automatically.
-* The engine's MainActivity stays the real launcher implementation. Our
-  own com.khahdihdz.j2meemulator.MainActivity is a thin forwarder
-  (Theme.NoDisplay, finishes immediately) that owns MAIN/LAUNCHER and
-  the ACTION_VIEW filters, so the merged app has exactly one launcher
-  icon and one receiver for .jar/.jad/.kjx files. The merge strips
-  those intent-filters from the engine activity's manifest entry.
+* The engine's MainActivity stays the real library/management screen
+  (AppsListFragment: list, search, sort, import, rename, delete,
+  reinstall, shortcut). Our own com.khahdihdz.j2meemulator.MainActivity
+  is the Home screen (Phase 3: light Theme.J2MEEmulator, app identity,
+  read-only game list) that owns MAIN/LAUNCHER and the ACTION_VIEW
+  filters, so the merged app has exactly one launcher icon and one
+  receiver for .jar/.jad/.kjx files. The merge strips those
+  intent-filters from the engine activity's manifest entry. Game-file
+  intents are still forwarded to the engine MainActivity by our
+  MainActivity; plain launches show our Home. Two more of our
+  activities are declared by the merge: GameDetailsActivity and
+  AboutActivity (both exported=false, no intent filters).
 * Conflict rule: engine wins for same-path files, EXCEPT the value
   files res/values/strings.xml and colors.xml, which are merged by
   resource name (engine wins on a name clash; verified: there is no
@@ -73,6 +79,15 @@ ET.register_namespace("tools", TOOLS_NS)
 APP_ID = "com.khahdihdz.j2meemulator"
 ENGINE_NAMESPACE = "ru.playsoftware.j2meloader"
 FORWARDER_CLASS = "com.khahdihdz.j2meemulator.MainActivity"
+FORWARDER_THEME = "@style/Theme.J2MEEmulator"
+# Our own extra activities (Phase 3), declared by the merge with no
+# intent filters. Theme.J2MEEmulator comes from the skeleton's
+# res/values/themes.xml, which survives the merge because the engine
+# has no res/values/themes.xml of its own (verified at tag 1.8.2).
+OUR_ACTIVITIES = (
+    "com.khahdihdz.j2meemulator.GameDetailsActivity",
+    "com.khahdihdz.j2meemulator.AboutActivity",
+)
 
 # Engine classes the merged app cannot run without.
 REQUIRED_ENGINE_CLASSES = [
@@ -398,11 +413,20 @@ def merged_manifest(engine_manifest):
     forwarder = ET.Element("activity")
     forwarder.set(android_attr("name"), FORWARDER_CLASS)
     forwarder.set(android_attr("exported"), "true")
-    forwarder.set(android_attr("theme"), "@android:style/Theme.NoDisplay")
+    forwarder.set(android_attr("theme"), FORWARDER_THEME)
     for f in filters:
         forwarder.append(f)
     idx = list(app).index(engine_main)
     app.insert(idx + 1, forwarder)
+    # Our own Phase 3 activities (no intent filters, not exported).
+    pos = idx + 2
+    for cls in OUR_ACTIVITIES:
+        act = ET.Element("activity")
+        act.set(android_attr("name"), cls)
+        act.set(android_attr("exported"), "false")
+        act.set(android_attr("theme"), FORWARDER_THEME)
+        app.insert(pos, act)
+        pos += 1
     ET.indent(tree, space="    ")
     return tree
 
@@ -621,9 +645,21 @@ def final_checks(root):
             or micro.get(android_attr("process")) != ":midlet":
         return fail("MicroActivity must stay exported=false, "
                     "process=:midlet")
-    print("  OK   merged manifest: one LAUNCHER (forwarder), VIEW "
-          "filters only on forwarder, MicroActivity exported=false "
-          "in :midlet process")
+    by_name = {act.get(android_attr("name")): act
+               for act in app.findall("activity")}
+    home = by_name.get(FORWARDER_CLASS)
+    if home is None or home.get(android_attr("theme")) != FORWARDER_THEME:
+        return fail("Home (forwarder) activity must use "
+                    f"theme {FORWARDER_THEME}")
+    for cls in OUR_ACTIVITIES:
+        act = by_name.get(cls)
+        if act is None or act.get(android_attr("exported")) != "false" \
+                or act.get(android_attr("theme")) != FORWARDER_THEME:
+            return fail(f"{cls} must be declared, exported=false, "
+                        f"theme {FORWARDER_THEME}")
+    print("  OK   merged manifest: one LAUNCHER (Home), VIEW "
+          "filters only on Home, MicroActivity exported=false "
+          "in :midlet process, our Details/About activities declared")
     print(f"PASS: engine merged. {java_count} Java files in app.")
     return 0
 
