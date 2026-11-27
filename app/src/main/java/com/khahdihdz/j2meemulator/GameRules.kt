@@ -56,7 +56,13 @@ object GameUriRules {
     fun validate(scheme: String?, path: String?): Error? {
         val normalizedScheme = scheme?.lowercase()
         if (normalizedScheme !in GAME_SCHEMES) return Error.BAD_SCHEME
-        val extension = path.orEmpty().substringAfterLast('.', "").lowercase()
+        // The extension comes from the last path segment only: a dot in
+        // the authority or in a directory name (e.g. the host in
+        // "content://com.example/1234") is not a file extension, and a
+        // Uri without an extension is forwarded — the engine sniffs the
+        // magic bytes and decides.
+        val fileName = path.orEmpty().substringAfterLast('/')
+        val extension = fileName.substringAfterLast('.', "").lowercase()
         if (extension.isNotEmpty() && extension !in GAME_EXTENSIONS) {
             return Error.BAD_EXTENSION
         }
