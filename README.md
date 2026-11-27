@@ -9,12 +9,17 @@ bên trong, đóng gói thành một APK độc lập. Không yêu cầu cài J2
 - Ngôn ngữ: Kotlin + Java (engine dùng Java)
 - Build: Gradle + Android Gradle Plugin
 
-## Trạng thái hiện tại: SKELETON v0.1.0 — engine CHƯA tích hợp
+## Trạng thái hiện tại: engine đã tích hợp (Giai đoạn 2), launcher Home/Details/About xong (Giai đoạn 3), import JAR/JAD xong (Giai đoạn 4)
 
-Bản skeleton này chỉ có launcher tối thiểu: nhận intent mở file `.jar`/`.jad`
-và hiển thị trạng thái. **Chưa chạy được game.** Mọi màn hình game, thư viện,
-virtual keypad và cài đặt sẽ được thêm ở các giai đoạn sau, sau khi engine được
-tích hợp và build gốc của engine pass trên CI.
+Engine J2ME Loader 1.8.2 đã được hợp nhất vào app qua script
+`tools/merge-engine.py` chạy trên GitHub Actions, và CI trên nhánh
+`feat/launcher-engine` đang xanh (merge → unit test → lint → build
+debug APK). Home hiển thị danh sách game đã cài, mở file
+`.jar`/`.jad`/`.kjx` qua ACTION_VIEW/ACTION_SEND hoặc trình chọn file
+(SAF), và chạy game sau khi import thành công. **Chưa cài/chơi thử
+trên máy thật.** Các giai đoạn còn lại (quản lý thư viện, điều khiển,
+tests, ký release v0.1.0) xem trong
+[`docs/ENGINE-INTEGRATION.md`](docs/ENGINE-INTEGRATION.md).
 
 ## Engine
 
