@@ -48,7 +48,7 @@ import ru.playsoftware.j2meloader.util.AppUtils
  *   never reads EXTRA_STREAM): Home extracts the Uri from
  *   EXTRA_STREAM (single share, or the first item of a SEND_MULTIPLE)
  *   and forwards it as a VIEW data Uri to the engine MainActivity.
- * - "Nhập game từ file" button: SAF ACTION_OPEN_DOCUMENT ("*/*"),
+ * - "Nhập game từ file" button: SAF ACTION_OPEN_DOCUMENT (any MIME type),
  *   then the picked Uri is validated and forwarded the same way.
  *   History guard: a Uri restored from history
  *   (FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) is not forwarded again.
@@ -103,7 +103,7 @@ class MainActivity : AppCompatActivity() {
 
     /** SAF picker for "Nhập game từ file". OpenDocument (not
      * GetContent) so the returned Uri carries a persistable read
-     * permission. "*/*": file providers report .jar/.jad with
+     * permission. Any MIME type: file providers report .jar/.jad with
      * unreliable MIME types, so filtering happens in
      * validateGameUri() and in the engine instead. */
     private val importFileLauncher = registerForActivityResult(
