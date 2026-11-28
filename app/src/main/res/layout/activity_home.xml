@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 3 — Home screen (ours). Light theme, blue primary, white cards.
+     The game list is read-only here: rename, reinstall and home-screen
+     shortcut live in the engine's MainActivity, opened with
+     "Thư viện & Nhập game". Phase 5 added search and sort to this
+     screen, and delete to our GameDetailsActivity. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/windowBackground"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardBackgroundColor="@color/cardBackground"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="2dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/colorPrimary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/home_subtitle"
+                android:textColor="@color/textSecondary"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/home_work_dir"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/home_work_dir_unknown"
+                android:textColor="@color/textSecondary"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/home_open_library"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/home_open_library" />
+
+        <Button
+            android:id="@+id/home_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/home_settings" />
+
+        <Button
+            android:id="@+id/home_about"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/home_about" />
+
+    </LinearLayout>
+
+    <!-- Phase 4 — import a game file through the system file picker
+         (SAF). The picked Uri is validated and forwarded to the
+         engine MainActivity, same as an ACTION_VIEW intent. -->
+    <Button
+        android:id="@+id/home_import_file"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/import_pick_file" />
+
+    <!-- Phase 5 — search and sort on Home. The search box filters the
+         list below by title or author (same match rule as the engine
+         list); the sort button writes the same PREF_APP_SORT the engine
+         list uses, so both lists sort the same way. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <androidx.appcompat.widget.SearchView
+            android:id="@+id/home_search"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:iconifiedByDefault="false"
+            android:queryHint="@string/home_search_hint" />
+
+        <Button
+            android:id="@+id/home_sort"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/home_sort" />
+
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/home_games_title"
+        android:textColor="@color/textPrimary"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <ListView
+        android:id="@+id/home_game_list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:divider="@android:color/transparent"
+        android:dividerHeight="8dp" />
+
+    <LinearLayout
+        android:id="@+id/home_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/home_empty_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/home_no_games"
+            android:textColor="@color/textSecondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/home_no_games_hint"
+            android:textColor="@color/textSecondary"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

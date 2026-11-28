@@ -1,0 +1,26 @@
+// Top-level build file. Values verified from upstream
+// nikita36078/J2ME-Loader tag 1.8.2 (build.gradle at that tag).
+plugins {
+    id 'com.android.application' version '8.5.1' apply false
+    id 'com.android.library' version '8.5.1' apply false
+    // Kotlin plugin 1.8.0: ASSUMPTION, not in upstream 1.8.2 build files
+    // (upstream only pins kotlin-bom 1.8.0 as a platform). The skeleton
+    // MainActivity is Kotlin, so a kotlin-android plugin is required;
+    // version 1.8.0 matches the upstream BOM. CI must verify it resolves.
+    id 'org.jetbrains.kotlin.android' version '1.8.0' apply false
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+ext {
+    // Verified from upstream 1.8.2 build.gradle.
+    COMPILE_SDK = 34
+    // Upstream MIN_SDK = 14, but upstream README says Android 5.0+ (API 21).
+    // Kept at 14 per app/build.gradle; final minSdk decided after the
+    // pristine engine build passes on CI.
+    MIN_SDK = 14
+    TARGET_SDK = 34
+    NDK_VERSION = '22.1.7171670'
+}

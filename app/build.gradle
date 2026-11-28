@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.khahdihdz.j2meemulator'
+    compileSdk COMPILE_SDK
+
+    defaultConfig {
+        applicationId "com.khahdihdz.j2meemulator"
+        minSdk MIN_SDK
+        targetSdk TARGET_SDK
+        // Version comes from the apksign shared-signing workflow via env vars
+        // (APP_VERSION_CODE / APP_VERSION_NAME); defaults are v0.1.0 / code 1.
+        versionCode = System.getenv("APP_VERSION_CODE")?.toInteger() ?: 1
+        versionName = System.getenv("APP_VERSION_NAME") ?: "0.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+        debug {
+            applicationIdSuffix '.debug'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // Versions taken from upstream J2ME-Loader 1.8.2 app/build.gradle.
+    // (core-ktx is intentionally NOT added: upstream does not list it and
+    // the skeleton does not need it.)
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+}

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">J2ME Emulator</string>
+    <string name="engine_not_integrated">Engine chưa tích hợp — đang ở skeleton v0.1.0. Chưa chạy được game.</string>
+    <string name="received_file">Đã nhận file: %1$s\n(File chưa được import vì engine chưa tích hợp.)</string>
+    <string name="no_file_received">Chưa nhận file game nào. Mở một file .jar hoặc .jad để thử import sau khi engine được tích hợp.</string>
+    <string name="skeleton_title">J2ME Emulator — Skeleton v0.1.0</string>
+
+    <!-- Phase 3 — Home / Library (ours). Names are prefixed so they cannot
+         collide with the engine's strings (verified: no overlap with the
+         249 engine strings at tag 1.8.2). -->
+    <string name="home_subtitle">Chạy game Java (J2ME) trên Android</string>
+    <string name="home_work_dir">Thư mục làm việc: %1$s</string>
+    <string name="home_work_dir_unknown">Thư mục làm việc: không xác định</string>
+    <string name="home_open_library">Thư viện &amp; Nhập game</string>
+    <string name="home_settings">Cài đặt</string>
+    <string name="home_about">Giới thiệu</string>
+    <string name="home_games_title">Game đã cài</string>
+    <string name="home_no_games">Chưa có game nào được cài.</string>
+    <string name="home_no_games_hint">Mở thư viện để nhập file .jar hoặc .jad.</string>
+
+    <!-- Phase 3 — Game details (ours). -->
+    <string name="details_run">Chạy</string>
+    <string name="details_settings">Cài đặt game</string>
+    <string name="details_author">Tác giả: %1$s</string>
+    <string name="details_version">Phiên bản: %1$s</string>
+    <string name="details_path">Đường dẫn: %1$s</string>
+
+    <!-- Phase 3 — About (ours). -->
+    <string name="about_title">Giới thiệu</string>
+    <string name="about_version">Phiên bản: %1$s</string>
+    <string name="about_engine">Engine: J2ME Loader 1.8.2 (Apache License 2.0)</string>
+    <string name="about_repo">Mã nguồn: github.com/khahdihdz/j2me-emulator</string>
+    <string name="about_engine_repo">Engine: github.com/nikita36078/J2ME-Loader</string>
+    <string name="about_how_to">Cách dùng: mở Thư viện để nhập file .jar hoặc .jad, chạm vào game để chạy, nhấn giữ game để xem chi tiết. Cài đặt từng game mở ra ở lần chạy đầu tiên.</string>
+    <string name="about_open_library">Mở thư viện</string>
+
+    <!-- Phase 4 — import (ours). "import_" names do not exist in the
+         engine's 249 strings at tag 1.8.2, so they cannot collide.
+         Only used by Home for its own pre-checks; errors the engine
+         itself reports (file hỏng, JAD thiếu URL, JAR thiếu manifest)
+         come from the engine's InstallerDialog, not from here. -->
+    <string name="import_pick_file">Nhập game từ file</string>
+    <string name="import_error_title">Không mở được file này</string>
+    <string name="import_error_bad_extension">File phải có đuôi .jar, .jad hoặc .kjx.</string>
+    <string name="import_error_bad_scheme">Không hỗ trợ đường dẫn này. Chỉ nhận file trên máy, file được chia sẻ, hoặc liên kết .jad trên mạng.</string>
+    <!-- Phase 5 — library search/sort on Home, delete in Details (ours).
+         Names do not exist in the engine's 249 strings at tag 1.8.2. -->
+    <string name="home_search_hint">Tìm theo tên hoặc tác giả…</string>
+    <string name="home_sort">Sắp xếp</string>
+    <string name="home_no_results">Không tìm thấy game nào khớp.</string>
+    <string name="details_folder">Thư mục: %1$s</string>
+    <string name="details_size">Kích thước: %1$s</string>
+    <string name="details_size_unknown">Kích thước: không xác định</string>
+    <string name="details_orientation">Hướng màn hình: %1$s</string>
+    <string name="details_orientation_unknown">Hướng màn hình: chưa cấu hình</string>
+    <string name="details_keyboard">Bàn phím ảo: %1$s</string>
+    <string name="details_keyboard_unknown">Bàn phím ảo: chưa cấu hình</string>
+    <string name="details_keyboard_on">Bật — %1$s</string>
+    <string name="details_keyboard_off">Tắt</string>
+    <string name="details_delete">Xóa game</string>
+    <string name="details_delete_title">Xóa game này?</string>
+    <string name="details_delete_message">Xóa “%1$s” khỏi thư viện? Dữ liệu đã lưu và cài đặt của game sẽ bị xóa cùng. File .jar/.jad gốc sẽ được giữ nguyên.</string>
+    <string name="details_deleted">Đã xóa %1$s. File gốc vẫn còn nguyên.</string>
+    <string name="details_delete_failed">Không xóa được %1$s.</string>
+</resources>

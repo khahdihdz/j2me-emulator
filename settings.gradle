@@ -1,0 +1,22 @@
+pluginManagement {
+    repositories {
+        mavenLocal()
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
+}
+rootProject.name = "J2ME Emulator"
+// Engine J2ME Loader (vendor/j2me-loader, tag 1.8.2) CHƯA được include ở đây.
+// Giai đoạn 2 sẽ wiring module engine sau khi submodule được checkout và
+// build gốc của engine pass. Không include đường dẫn chưa tồn tại.
+include ':app'

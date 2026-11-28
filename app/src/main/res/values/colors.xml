@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light theme, blue primary (per project spec). -->
+    <color name="colorPrimary">#1565C0</color>
+    <color name="colorPrimaryDark">#0D47A1</color>
+    <color name="colorAccent">#1E88E5</color>
+    <color name="windowBackground">#F2F5F9</color>
+    <color name="cardBackground">#FFFFFF</color>
+    <color name="textPrimary">#212121</color>
+    <color name="textSecondary">#616161</color>
+</resources>

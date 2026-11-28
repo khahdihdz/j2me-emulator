@@ -1,0 +1,114 @@
+name: Engine pristine build
+
+# Build the UNMODIFIED upstream J2ME Loader (tag 1.8.2) on CI, to lock
+# JDK/AGP/NDK/SDK before any integration work. No code in this repo is
+# built here — only the upstream engine, checked out fresh from GitHub.
+#
+# Why a separate checkout instead of the git submodule:
+# .gitmodules declares vendor/j2me-loader, but the submodule gitlink was
+# never committed (it cannot be created through the GitHub API / web UI),
+# so `submodules: recursive` on our own checkout would fetch nothing.
+# This workflow checks out the upstream repo directly into
+# vendor/j2me-loader at the pinned tag. See docs/ENGINE-INTEGRATION.md §6.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/engine-pristine.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-pristine:
+    name: Build pristine J2ME Loader 1.8.2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Checkout upstream J2ME Loader 1.8.2
+        uses: actions/checkout@v4
+        with:
+          repository: nikita36078/J2ME-Loader
+          ref: "1.8.2"
+          path: vendor/j2me-loader
+          # At tag 1.8.2 upstream has no .gitmodules (verified 404 via
+          # GitHub API), so this is a no-op there; upstream master uses
+          # submodules: true (TinySoundFont), kept for parity.
+          submodules: true
+
+      - name: Set up JDK 17
+        # JDK 17: proven by our own skeleton CI (run #2, Success) with the
+        # same AGP 8.5.1 / Gradle 8.7. Upstream CI at tag 1.8.2 does not
+        # exist (no .github/workflows at that tag); upstream master uses
+        # JDK 21, but that is newer master code, not 1.8.2 — do not copy it
+        # blindly. If this build fails on JDK, try 21 next and record it.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # No android-actions/setup-android@v3 step: ubuntu-latest already
+      # ships an Android SDK (ANDROID_HOME set). That action failed in our
+      # CI run #1 because it tries to install the obsolete 'tools' package.
+      - name: Check Android SDK
+        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/build-tools" && ls "$ANDROID_HOME/platforms"
+
+      - name: Install NDK 22.1.7171670
+        # Upstream app/build.gradle sets ndkVersion 22.1.7171670 and builds
+        # native M3G via ndkBuild (src/main/cpp/Android.mk), so the exact
+        # NDK is REQUIRED — the preinstalled NDKs on ubuntu-latest (27/28
+        # era) do not satisfy it. Install syntax verified from Android
+        # sdkmanager docs / actions/runner-images guidance:
+        #   $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;<version>"
+        # NOT verified: whether Google still serves NDK r22b (22.1.7171670)
+        # through sdkmanager in 2026. If this step fails with "package not
+        # found", that is the answer — record it, do not invent another
+        # install method in this workflow.
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;22.1.7171670"
+          ls "$ANDROID_HOME/ndk/22.1.7171670"
+
+      - name: Verify engine checkout
+        run: python3 tools/check-engine-pristine.py vendor/j2me-loader
+
+      - name: Make gradlew executable
+        run: chmod +x vendor/j2me-loader/gradlew
+
+      # Upstream app/build.gradle line 32 loads keystore.properties
+      # unconditionally in signingConfigs.release, even for debug builds.
+      # A dummy file lets Gradle configuration pass; debug builds do not
+      # sign with it. No real key or password is used here.
+      - name: Create dummy keystore.properties
+        working-directory: vendor/j2me-loader
+        run: printf 'keyAlias=dummy\nkeyPassword=dummy\nstoreFile=dummy.jks\nstorePassword=dummy\n' > keystore.properties
+      - name: Build pristine engine (fdroidDebug)
+        # Task verified from upstream app/build.gradle at 1.8.2:
+        # flavours play/open/fdroid/dev (FULL_EMULATOR=true) + midlet
+        # (FULL_EMULATOR=false, needs a MIDlet manifest — NOT usable here).
+        # fdroidDebug is the debug build of a full-emulator flavour with no
+        # Play signing requirements. Upstream master CI builds
+        # assembleDevRelease, but that is a RELEASE build needing
+        # keystore.properties from secrets — not what a pristine check needs.
+        #
+        # KNOWN RISK (unverified, this run will confirm or refute):
+        # app/build.gradle signingConfigs.release eagerly loads
+        # keystore.properties via FileInputStream unless BITRISE_IO is set.
+        # If Gradle configuration fails with FileNotFoundException for
+        # keystore.properties, the fix is to create a dummy
+        # keystore.properties in this workflow before building — do NOT
+        # add it pre-emptively here, or the real behaviour stays hidden.
+        working-directory: vendor/j2me-loader
+        run: ./gradlew assembleFdroidDebug --stacktrace
+
+      - name: Upload pristine APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: j2me-loader-pristine-1.8.2
+          path: vendor/j2me-loader/app/build/outputs/apk/fdroid/debug/*.apk
+          if-no-files-found: error
