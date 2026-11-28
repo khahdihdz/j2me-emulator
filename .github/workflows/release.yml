@@ -98,21 +98,6 @@ jobs:
         run: python3 tools/merge-engine.py vendor/j2me-loader
       - name: Make gradlew executable
         run: chmod +x gradlew
-      - name: Run unit tests
-        # A release ships only when the tests pass (Phase 7: 73 tests).
-        # Flavour tasks: the merge adds product flavours, so the plain
-        # testDebugUnitTest task no longer exists; fdroid is the
-        # full-emulator flavour with no Play signing requirements.
-        run: ./gradlew testFdroidDebugUnitTest --stacktrace
-      - name: Upload unit test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-results-fdroid-release
-          path: |
-            app/build/test-results/testFdroidDebugUnitTest/*.xml
-            app/build/reports/tests/testFdroidDebugUnitTest/
-          if-no-files-found: warn
       - name: Diagnose and normalize signing keystore
         # Diagnostic step (kept permanently, per the
         # android_pkcs12_signing skill): decode the keystore from its
@@ -127,6 +112,10 @@ jobs:
         # app/build.gradle (from upstream), which loads it at Gradle
         # configuration time and signs the release buildType with it.
         # Both files live only on the runner; they are never committed.
+        # This step MUST run before any Gradle step: the merged
+        # app/build.gradle loads keystore.properties unconditionally
+        # at configuration time, so even the unit-test task fails
+        # without it (Release dry run #1 failed exactly this way).
         env:
           KS: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_SIGNING_STORE_PASSWORD }}
@@ -190,6 +179,21 @@ jobs:
             "$KEY_ALIAS" "$STORE_PASSWORD" "$normalized" "$STORE_PASSWORD" > keystore.properties
           chmod 600 keystore.properties
           echo "keystore.properties written (real keystore, runner-only)."
+      - name: Run unit tests
+        # A release ships only when the tests pass (Phase 7: 73 tests).
+        # Flavour tasks: the merge adds product flavours, so the plain
+        # testDebugUnitTest task no longer exists; fdroid is the
+        # full-emulator flavour with no Play signing requirements.
+        run: ./gradlew testFdroidDebugUnitTest --stacktrace
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-fdroid-release
+          path: |
+            app/build/test-results/testFdroidDebugUnitTest/*.xml
+            app/build/reports/tests/testFdroidDebugUnitTest/
+          if-no-files-found: warn
       - name: Build release APK
         # Gradle signs the release buildType with signingConfigs.release
         # (from upstream, kept by the merge script) using the
